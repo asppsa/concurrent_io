@@ -58,7 +58,7 @@ reader << IOActors::InformMessage.new(my_listener)
 reader << :read
 
 # Close the IO object and kill the actor
-writer << :close
+reader << :close
 ~~~
 
 Here is an example using a writer.
@@ -88,7 +88,7 @@ writer = controller.ask!(:writer)
 
 ## License
 
-io_actors is copyright (C) 2014 Alastair Pharo.  Distributed under
+io_actors is copyright (C) 2015 Alastair Pharo.  Distributed under
 [the Apache License, Version 2.0][license].
 
 [license]: http://www.apache.org/licenses/LICENSE-2.0
