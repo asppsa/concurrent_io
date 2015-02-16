@@ -46,7 +46,6 @@ class IOActors::SelectActor < Concurrent::Actor::RestartingContext
     log(Logger::INFO, "close(#{io})")
     io.close rescue nil
     self << IOActors::DeregisterMessage.new(io)
-    raise "YARG"
   rescue Exception => e
     log(Logger::ERROR, e.to_s)
   end
