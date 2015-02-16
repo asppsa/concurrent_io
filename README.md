@@ -26,6 +26,8 @@ controller = IOActors::ControllerActor.spawn('my_controller', my_io)
 
 # Tell the controller about your "listener" actor (or any other object
 # that responds to :<<).  This object will receive incoming packets.
+# If you spawn the controller inside of another actor then that actor
+# will receive these notifications by default.
 controller << IOActors::InformMessage.new(my_listener)
 
 # Tell the controller to register itself with the global selector so
