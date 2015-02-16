@@ -36,14 +36,14 @@ class IOActors::SelectActor < Concurrent::Actor::RestartingContext
 
   def deregister io
     return unless @selector.registered? io
-    log(Logger::INFO, "deregister(#{io})")
+    log(Logger::DEBUG, "deregister(#{io})")
     @selector.deregister(io)
   rescue Exception => e
     log(Logger::ERROR, e.to_s)
   end
 
   def close io
-    log(Logger::INFO, "close(#{io})")
+    log(Logger::DEBUG, "close(#{io})")
     io.close rescue nil
     self << IOActors::DeregisterMessage.new(io)
   rescue Exception => e
@@ -52,23 +52,22 @@ class IOActors::SelectActor < Concurrent::Actor::RestartingContext
 
   def tick
     @selector.select(@timeout) do |m|
-      log(Logger::INFO, "#{m.io}: #{m.io.closed?}")
+      log(Logger::DEBUG, "#{m.io}: #{m.io.closed?}")
       
       begin
         if m.io.nil?
           log(Logger::WARN, "nil IO object")
         elsif m.io.closed?
-          log(Logger::INFO, "Closing #{m.io} -- already closed")
+          log(Logger::DEBUG, "Closing #{m.io} -- already closed")
           m.value << :close
 
           # Do this in case the actor is already dead
           close m.io
         else
-          #log(Logger::INFO, "Issuing read to #{m.value}")
           m.value << :read
         end
       rescue IOError, Errno::EBADF, Errno::ECONNRESET
-        log(Logger::INFO, "Closing #{m.io} -- error")
+        log(Logger::DEBUG, "Closing #{m.io} -- error")
         m.value << :close
 
         # Do this in case the actor is already dead
