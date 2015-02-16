@@ -35,13 +35,16 @@ controller << IOActors::SelectMessage.new(IOActors.selector)
 # Whenever you want to write something, do like so:
 controller << IOActors::OutputMessage.new("My text I want to write")
 
+# Or, equivalently
+controller << "My text I want to write"
+
 # When you are done, tell the actor to clean up.
 controller << :close
 ~~~
 
-The `:close` message will also be sent to your listener, if you have
-provided one.  Additionally, if the IO object gets closed somehow, the
-selector will also tell the controller to close in the same way.
+A `:closed` message will also be sent to your listener, if you have
+provided one, once the IO object is closed (either by you or by
+someone else).
 
 You can use the `ReaderActor` and `WriterActor` individually if you
 want.  Below is an example of using a reader
