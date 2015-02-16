@@ -25,10 +25,10 @@ describe IOActors::SelectActor do
 
     # Now do the write and read with a lag in-between
     sockets[1].send("test", 0)
-    IO.select [sockets[0]]
+    sleep 0.5
     sockets[0].recv(4)
     sleep 0.5
-    arr = []
+    arr.clear
 
     # Check again that no more read messages are written subsequently
     sleep 0.5
@@ -41,11 +41,10 @@ describe IOActors::SelectActor do
 
     # Do a write and read with a lag in-between
     sockets[1].send("test", 0)
-    IO.select [sockets[0]]
     sleep 0.5
     sockets[0].recv(4)
     expect(arr.length).to be > 0
-    arr = []
+    arr.clear
 
     subject << IOActors::DeregisterMessage.new(sockets[0])
     sleep 0.5
@@ -54,8 +53,31 @@ describe IOActors::SelectActor do
     # result
     sockets[1].send("test", 0)
     sleep 0.5
-    IO.select [sockets[0]]
     expect(arr.length).to eq 0
+  end
+
+  it "passes :read if a socket gets closed" do
+    arr = []
+    subject << IOActors::RegisterMessage.new(sockets[0], arr)
+
+    # Do a write and read with a lag in-between
+    sockets[1].send("test", 0)
+    sleep 0.5
+    sockets[0].recv(10)
+    expect(arr.length).to be > 0
+
+    # Wait a moment to ensure that no more :read messages are coming
+    # through
+    sleep 0.5
+    arr.clear
+    sleep 0.5
+    expect(arr).to be_empty
+
+    # Close the socket and check to see that the :read messages resume
+    sockets[1].close
+    sleep 0.5
+    expect(arr.length).to be > 0
+    expect(arr).to all( eq :read )
   end
 
 end

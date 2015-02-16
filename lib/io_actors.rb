@@ -11,7 +11,7 @@ module IOActors
   InformMessage = Struct.new(:actor)
 
   @selector = Concurrent::Delay.new{ SelectActor.spawn 'io_actors_selector' }
-  
+
   class << self
     def selector
       @selector.value
@@ -23,3 +23,14 @@ require "io_actors/controller_actor"
 require "io_actors/reader_actor"
 require "io_actors/select_actor"
 require "io_actors/writer_actor"
+
+if ENV['IOACTORS_DEBUG']
+  L = Logger.new(STDOUT)
+
+  Concurrent.configure do |c|
+    c.logger = lambda do |level, *params|
+      return unless level > Logger::DEBUG
+      L.add level, *params
+    end
+  end
+end

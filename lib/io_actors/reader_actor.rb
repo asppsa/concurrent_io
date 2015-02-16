@@ -1,10 +1,9 @@
 class IOActors::ReaderActor < Concurrent::Actor::RestartingContext
 
-  def initialize io, logger=nil, buffer_size=4096
+  def initialize io, listener=nil, buffer_size=4096
     @io = io
-    @logger = logger
     @buffer_size = buffer_size
-    @listener = nil
+    @listener = listener
   end
 
   def on_message message
@@ -21,8 +20,10 @@ class IOActors::ReaderActor < Concurrent::Actor::RestartingContext
   private
 
   def close
-    parent << :close if parent
     @io.close rescue nil
+
+    @listener << :closed if @listener
+    parent << :closed
     terminate!
   end
 
@@ -44,5 +45,7 @@ class IOActors::ReaderActor < Concurrent::Actor::RestartingContext
     end
   rescue IOError, Errno::EBADF, Errno::ECONNRESET
     close
+  rescue Exception => e
+    log(Logger::ERROR, e.to_s)
   end
 end

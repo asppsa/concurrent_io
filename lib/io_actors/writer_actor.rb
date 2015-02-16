@@ -1,8 +1,7 @@
 class IOActors::WriterActor < Concurrent::Actor::RestartingContext
 
-  def initialize io, logger=nil
+  def initialize io
     @io = io
-    @logger = logger
     @writes = []
   end
 
@@ -10,6 +9,8 @@ class IOActors::WriterActor < Concurrent::Actor::RestartingContext
     case message
     when IOActors::OutputMessage
       append message.bytes
+    when String
+      append message
     when :write
       write
     when :close
@@ -20,8 +21,9 @@ class IOActors::WriterActor < Concurrent::Actor::RestartingContext
   private
 
   def close
-    parent << :close if parent
     @io.close rescue nil
+
+    parent << :closed
     terminate!
   end
 

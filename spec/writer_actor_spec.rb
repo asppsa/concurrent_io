@@ -9,14 +9,17 @@ describe IOActors::WriterActor do
   after(:each) { subject.ask!(:close) rescue nil }
 
   it "can write bytes" do
-    subject << IOActors::OutputMessage.new("test")
-    expect(sockets[1].recv(4)).to eq("test")
+    subject << IOActors::OutputMessage.new("test1")
+    expect(sockets[1].recv(5)).to eq("test1")
+
+    subject << "test2"
+    expect(sockets[1].recv(5)).to eq("test2")
   end
 
   it "can write large numbers of bytes" do
     bytes = SecureRandom.random_bytes(1_000_000)
     hash = Digest::SHA1.hexdigest bytes
-    subject << IOActors::OutputMessage.new(bytes)
+    subject << bytes
 
     input = ""
     while input.bytesize < 1_000_000

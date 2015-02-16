@@ -1,11 +1,13 @@
 class IOActors::ControllerActor < Concurrent::Actor::RestartingContext
 
-  def initialize io, logger=nil
+  def initialize io
     @io = io
-    @reader = IOActors::ReaderActor.spawn("#{io}.reader", io, logger)
-    @writer = IOActors::WriterActor.spawn("#{io}.writer", io, logger)
+    listener = if parent != Concurrent::Actor.root
+                 parent
+               end
+    @reader = IOActors::ReaderActor.spawn("reader", io, listener)
+    @writer = IOActors::WriterActor.spawn("writer", io)
     @selector = nil
-    @listener = nil
   end
 
   def on_message message
@@ -13,27 +15,42 @@ class IOActors::ControllerActor < Concurrent::Actor::RestartingContext
     when IOActors::SelectMessage
       select message.actor
     when IOActors::InformMessage
-      @listener = message.actor
       @reader << message
     when :read
       @reader << message
-    when IOActors::OutputMessage
+    when IOActors::OutputMessage, String
       @writer << message
     when :close
       close
+    when :closed
+      closed
     when :reader
       @reader
     when :writer
       @writer
+    when :listener
+      listener
     end
   end
 
   private
 
+  def listener
+    @reader.ask! :listener
+  rescue
+    nil
+  end
+
   def close
-    @selector << IOActors::DeregisterMessage.new(@io) if @selector
-    @listener << :close if @listener
     @io.close rescue nil
+    closed
+  end
+
+  def closed
+    @selector << IOActors::DeregisterMessage.new(@io) if @selector
+    if l = listener
+      l << :closed
+    end
     terminate!
   end
 

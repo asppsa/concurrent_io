@@ -2,9 +2,8 @@ require 'nio'
 
 class IOActors::SelectActor < Concurrent::Actor::RestartingContext
 
-  def initialize timeout=0.1, logger=nil
+  def initialize timeout=0.1
     @timeout = timeout or raise "timeout cannot be nil"
-    @logger = logger
     @selector = NIO::Selector.new
 
     self << :tick
@@ -26,42 +25,51 @@ class IOActors::SelectActor < Concurrent::Actor::RestartingContext
   private
 
   def register io, actor
-    @logger.debug "register(#{io}, #{actor})" if @logger
+    log(Logger::DEBUG, "register(#{io}, #{actor})")
     monitor = @selector.register(io, :r)
     monitor.value = actor
+  rescue IOError
+    envelope.sender << :closed if envelope.sender
   rescue Exception => e
-    @logger.error e if @logger
+    log(Logger::ERROR, e.to_s)
   end
 
   def deregister io
-    @logger.debug "deregister(#{io})" if @logger
+    return unless @selector.registered? io
+    log(Logger::INFO, "deregister(#{io})")
     @selector.deregister(io)
   rescue Exception => e
-    @logger.error e if @logger
+    log(Logger::ERROR, e.to_s)
   end
 
-
   def close io
-    io.close
+    log(Logger::INFO, "close(#{io})")
+    io.close rescue nil
     self << IOActors::DeregisterMessage.new(io)
-  rescue
-    nil
+    raise "YARG"
+  rescue Exception => e
+    log(Logger::ERROR, e.to_s)
   end
 
   def tick
     @selector.select(@timeout) do |m|
+      log(Logger::INFO, "#{m.io}: #{m.io.closed?}")
+      
       begin
         if m.io.nil?
-          @logger.warn "nil IO object" if @logger
+          log(Logger::WARN, "nil IO object")
         elsif m.io.closed?
+          log(Logger::INFO, "Closing #{m.io} -- already closed")
           m.value << :close
 
           # Do this in case the actor is already dead
           close m.io
         else
+          #log(Logger::INFO, "Issuing read to #{m.value}")
           m.value << :read
         end
       rescue IOError, Errno::EBADF, Errno::ECONNRESET
+        log(Logger::INFO, "Closing #{m.io} -- error")
         m.value << :close
 
         # Do this in case the actor is already dead
@@ -69,7 +77,7 @@ class IOActors::SelectActor < Concurrent::Actor::RestartingContext
       end
     end
   rescue Exception => e
-    @logger.error e if @logger
+    log(Logger::ERROR, e.to_s)
   ensure
     self << :tick
   end
