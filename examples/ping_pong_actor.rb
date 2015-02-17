@@ -23,6 +23,8 @@ class PingPongActor < Concurrent::Actor::Context
     when :die
       @controller << :close
       terminate!
+    when :closed
+      terminate!
     end
   end
 end
