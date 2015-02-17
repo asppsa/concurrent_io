@@ -1,6 +1,6 @@
 require "io_actors/version"
 
-require 'concurrent'
+require 'concurrent/actor'
 
 module IOActors
   SelectMessage = Struct.new(:actor)
