@@ -1,6 +1,6 @@
 describe IOActors::ReaderActor do
 
-  let(:sockets){ UNIXSocket.pair(:STREAM) }
+  let(:sockets){ UNIXSocket.pair }
 
   subject{ described_class.spawn('my_reader', sockets[0]) }
   after(:each) { subject.ask!(:close) rescue nil }
