@@ -47,8 +47,12 @@ class IOActors::WriterActor < Concurrent::Actor::RestartingContext
       @io.flush
     end
 
-    # If the write could not be completed in one go
-    if num_bytes < bytes.bytesize
+    # If the write could not be completed in one go, or if there are
+    # more writes pending ...
+    if num_bytes == 0
+      @writes.unshift bytes
+      self << :write
+    elsif num_bytes < bytes.bytesize
       @writes.unshift bytes.byteslice(num_bytes..bytes.bytesize)
       self << :write
     elsif !@writes.empty?
@@ -56,5 +60,7 @@ class IOActors::WriterActor < Concurrent::Actor::RestartingContext
     end
   rescue IOError, Errno::EPIPE, Errno::ECONNRESET
     close
+  rescue Exception => e
+    log(Logger::ERROR, e.to_s)
   end
 end
