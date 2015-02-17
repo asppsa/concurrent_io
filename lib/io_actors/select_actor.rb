@@ -29,7 +29,7 @@ class IOActors::SelectActor < Concurrent::Actor::RestartingContext
     monitor = @selector.register(io, :r)
     monitor.value = actor
   rescue IOError
-    envelope.sender << :closed if envelope.sender
+    envelope.sender << :close if envelope.sender
   rescue Exception => e
     log(Logger::ERROR, e.to_s)
   end
@@ -42,10 +42,11 @@ class IOActors::SelectActor < Concurrent::Actor::RestartingContext
     log(Logger::ERROR, e.to_s)
   end
 
-  def close io
-    log(Logger::DEBUG, "close(#{io})")
-    io.close rescue nil
-    self << IOActors::DeregisterMessage.new(io)
+  def close m
+    log(Logger::DEBUG, "close(#{m})")
+    m.io.close rescue nil
+    self << IOActors::DeregisterMessage.new(m.io)
+    m.value << :close
   rescue Exception => e
     log(Logger::ERROR, e.to_s)
   end
@@ -59,19 +60,13 @@ class IOActors::SelectActor < Concurrent::Actor::RestartingContext
           log(Logger::WARN, "nil IO object")
         elsif m.io.closed?
           log(Logger::DEBUG, "Closing #{m.io} -- already closed")
-          m.value << :close
-
-          # Do this in case the actor is already dead
-          close m.io
+          close m
         else
           m.value << :read
         end
       rescue IOError, Errno::EBADF, Errno::ECONNRESET
         log(Logger::DEBUG, "Closing #{m.io} -- error")
-        m.value << :close
-
-        # Do this in case the actor is already dead
-        close m.io
+        close m
       end
     end
   rescue Exception => e
