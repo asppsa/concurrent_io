@@ -39,7 +39,7 @@ class IOActors::WriterActor < Concurrent::Actor::RestartingContext
 
     num_bytes = begin
                   @io.write_nonblock(bytes)
-                rescue IO::WaitWritable
+                rescue IO::WaitWritable, Errno::EAGAIN
                   0
                 end
 
