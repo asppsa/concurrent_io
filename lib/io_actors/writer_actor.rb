@@ -1,4 +1,4 @@
-class IOActors::WriterActor < Concurrent::Actor::RestartingContext
+class IOActors::WriterActor < Concurrent::Actor::Context
 
   def initialize io
     @io = io
@@ -16,6 +16,11 @@ class IOActors::WriterActor < Concurrent::Actor::RestartingContext
     when :close
       close
     end
+  end
+
+  def terminate!
+    @writes = nil
+    super
   end
 
   private

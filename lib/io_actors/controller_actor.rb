@@ -1,4 +1,4 @@
-class IOActors::ControllerActor < Concurrent::Actor::RestartingContext
+class IOActors::ControllerActor < Concurrent::Actor::Context
 
   def initialize io
     @io = io
@@ -29,6 +29,11 @@ class IOActors::ControllerActor < Concurrent::Actor::RestartingContext
     when :listener
       listener
     end
+  end
+
+  def terminate!
+    @reader = @writer = @selector = nil
+    super
   end
 
   private

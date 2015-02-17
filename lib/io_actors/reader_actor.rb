@@ -1,4 +1,4 @@
-class IOActors::ReaderActor < Concurrent::Actor::RestartingContext
+class IOActors::ReaderActor < Concurrent::Actor::Context
 
   def initialize io, listener=nil, buffer_size=4096
     @io = io
@@ -15,6 +15,11 @@ class IOActors::ReaderActor < Concurrent::Actor::RestartingContext
     when :close
       close
     end
+  end
+
+  def terminate!
+    @listener = nil
+    super
   end
 
   private
