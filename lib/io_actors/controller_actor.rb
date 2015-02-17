@@ -14,12 +14,10 @@ class IOActors::ControllerActor < Concurrent::Actor::RestartingContext
     case message
     when IOActors::SelectMessage
       select message.actor
-    when IOActors::InformMessage
-      @reader << message
-    when :read
-      @reader << message
+    when IOActors::InformMessage, :read
+      redirect @reader
     when IOActors::OutputMessage, String
-      @writer << message
+      redirect @writer
     when :close
       close
     when :closed
