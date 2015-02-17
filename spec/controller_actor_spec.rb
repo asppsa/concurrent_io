@@ -2,7 +2,7 @@ require 'socket'
 
 describe IOActors::ControllerActor do
 
-  let(:sockets){ Socket.pair(:UNIX, :STREAM, 0) }
+  let(:sockets){ UNIXSocket.pair }
   
   subject{ described_class.spawn('my_controller', sockets[0]) }
   after(:each) { subject.ask!(:close) rescue nil }
@@ -45,8 +45,7 @@ describe IOActors::ControllerActor do
     sockets[1].send("test", 0)
     subject << :read
 
-    # freezes
-    true while listener.empty?
+    sleep 1
 
     listener.each{ |i| expect(i).to be_a(IOActors::InputMessage) }
     expect(listener.map{ |i| i.bytes }.join).to eq("test")
@@ -117,7 +116,7 @@ describe IOActors::ControllerActor do
     subject << IOActors::InformMessage.new(listener)
     subject.ask! IOActors::SelectMessage.new(IOActors.selector)
     sockets[1] << "test"
-    true while listener.empty?
+    sleep 1
     expect(listener.map{ |i| i.bytes }.join).to eq("test")
 
     # Now close the IO object and wait a moment

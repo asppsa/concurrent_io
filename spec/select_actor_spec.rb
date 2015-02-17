@@ -1,6 +1,6 @@
 describe IOActors::SelectActor do
 
-  let(:sockets){ Socket.pair(:UNIX, :STREAM, 0) }
+  let(:sockets){ UNIXSocket.pair }
   subject{ described_class.spawn('my_selector') }
 
   after(:each) { subject.ask! :stop }

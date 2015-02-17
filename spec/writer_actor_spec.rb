@@ -3,7 +3,7 @@ require 'digest/sha1'
 
 describe IOActors::WriterActor do
 
-  let(:sockets){ Socket.pair(:UNIX, :STREAM, 0) }
+  let(:sockets){ UNIXSocket.pair }
   
   subject{ described_class.spawn('my_writer', sockets[0]) }
   after(:each) { subject.ask!(:close) rescue nil }

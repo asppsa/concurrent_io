@@ -1,6 +1,6 @@
 describe IOActors::ReaderActor do
 
-  let(:sockets){ Socket.pair(:UNIX, :STREAM, 0) }
+  let(:sockets){ UNIXSocket.pair(:STREAM) }
 
   subject{ described_class.spawn('my_reader', sockets[0]) }
   after(:each) { subject.ask!(:close) rescue nil }
@@ -11,8 +11,7 @@ describe IOActors::ReaderActor do
     sockets[1].send("test", 0)
     subject << :read
 
-    # freezes
-    true while listener.empty?
+    sleep 1
 
     listener.each{ |i| expect(i).to be_a(IOActors::InputMessage) }
     expect(listener.map{ |i| i.bytes }.join).to eq("test")
