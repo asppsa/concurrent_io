@@ -34,6 +34,7 @@ describe IOActors::ControllerActor do
   it "can wire up a select actor" do
     selector = []
     subject.ask! IOActors::SelectMessage.new(selector)
+    subject.ask! :read
     expect(selector.first).to be_a(IOActors::RegisterMessage)
     expect(selector.first.io).to eq(sockets[0])
     expect(selector.first.actor).to eq(subject.ask!(:reader))
@@ -103,26 +104,32 @@ describe IOActors::ControllerActor do
     expect(writer.ask! :terminated?).to be_truthy
   end
 
-  it "terminates on select if the IO object is already closed" do
-    sockets[1].close
-    subject.ask! IOActors::SelectMessage.new(IOActors.selector)
-    sleep 0.5
-    expect(subject.ask! :terminated?).to be_truthy
+  context "with a selector" do
+    let(:selector) { IOActors::SelectActor.spawn('my_selector') }
+    after(:each) { selector.ask! :stop }
+
+    it "terminates on read if the IO object is already closed" do
+      sockets[1].close
+      subject.ask! IOActors::SelectMessage.new(selector)
+      subject.ask! :read
+      sleep 0.5
+      expect(subject.ask! :terminated?).to be_truthy
+    end
+
+    it "terminates if the IO object is closed during a select" do
+      # First check that the select loop is working
+      listener = []
+      subject << IOActors::InformMessage.new(listener)
+      subject.ask! IOActors::SelectMessage.new(selector)
+      subject.ask! :read
+      sockets[1] << "test"
+      sleep 1
+      expect(listener.map{ |i| i.bytes }.join).to eq("test")
+
+      # Now close the IO object and wait a moment
+      sockets[1].close
+      sleep 1
+      expect(subject.ask! :terminated?).to be_truthy
+    end
   end
-
-  it "terminates if the IO object is closed during a select" do
-    # First check that the select loop is working
-    listener = []
-    subject << IOActors::InformMessage.new(listener)
-    subject.ask! IOActors::SelectMessage.new(IOActors.selector)
-    sockets[1] << "test"
-    sleep 1
-    expect(listener.map{ |i| i.bytes }.join).to eq("test")
-
-    # Now close the IO object and wait a moment
-    sockets[1].close
-    sleep 1
-    expect(subject.ask! :terminated?).to be_truthy
-  end
-
 end
