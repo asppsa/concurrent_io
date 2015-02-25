@@ -6,16 +6,18 @@ class IOActors::SelectActor < Concurrent::Actor::RestartingContext
     @timeout = timeout or raise "timeout cannot be nil"
     @selector = NIO::Selector.new
 
-    self << :tick
+    @registered = {}
+
+    ref << :tick
   end
 
   def on_message message
     case message
     when IOActors::RegisterMessage
-      register message.io, message.actor
+      register message.io, message.actor, message.direction
     when IOActors::DeregisterMessage
       deregister message.io
-    when :tick
+    when :tick, :reset!, :restart!
       tick
     when :stop
       terminate!
@@ -24,37 +26,80 @@ class IOActors::SelectActor < Concurrent::Actor::RestartingContext
 
   private
 
-  def register io, actor
-    log(Logger::DEBUG, "register(#{io}, #{actor})")
-    monitor = @selector.register(io, :r)
-    monitor.value = actor
-  rescue IOError
-    envelope.sender << :close if envelope.sender
-  rescue Exception => e
-    log(Logger::ERROR, e.to_s)
+  def registered? io, direction=nil
+    return false unless exists = @registered.key?(io)
+
+    case direction
+    when nil
+      exists
+    when :r
+      [:r, :rw].member? @registered[io]
+    when :w
+      [:w, :rw].member? @registered[io]
+    when :rw
+      @registered[io] == :rw
+    end && @registered[io]
   end
 
-  def deregister io
-    return unless @selector.registered? io
-    log(Logger::DEBUG, "deregister(#{io})")
-    @selector.deregister(io)
+  def register io, actor, direction
+    log(Logger::DEBUG, "register(#{io}, #{actor}, #{direction})")
+
+    return false if registered? io, direction
+
+    actors = {direction => actor}
+
+    # The only way this can be true is if we are upgrading from :r or
+    # :w to :rw
+    if registered?(io) and monitor = deregister(io)
+      direction = :rw
+      actors.merge!(monitor.value)
+    end
+
+    monitor = @selector.register(io, direction)
+    @registered[io] = direction
+    monitor.value = actors
+    true
+  rescue IOError
+    envelope.sender << :close if envelope.sender
+    false
   rescue Exception => e
     log(Logger::ERROR, e.to_s)
+    false
+  end
+
+  def deregister io, direction=nil
+    return unless @registered.key?(io)
+    log(Logger::DEBUG, "deregister(#{io}, #{direction})")
+
+    # Completely deregister
+    monitor = @selector.deregister(io)
+    @registered.delete(io)
+
+    # Re-register if necessary
+    if direction and other = monitor.value.keys.find{ |k| k != direction }
+      log(Logger::DEBUG, "reregister(#{io}, #{monitor.value[other]}, #{other})")
+      register io, monitor.value[other], other
+    end
+
+    true
+  rescue Exception => e
+    log(Logger::ERROR, e.to_s)
+    false
   end
 
   def close m
-    log(Logger::DEBUG, "close(#{m})")
     m.io.close rescue nil
-    self << IOActors::DeregisterMessage.new(m.io)
-    m.value << :close
+    deregister m.io
+    m.value.each do |dir,actor|
+      actor << :close
+    end
   rescue Exception => e
     log(Logger::ERROR, e.to_s)
   end
 
   def tick
-    @selector.select(@timeout) do |m|
-      log(Logger::DEBUG, "#{m.io}: #{m.io.closed?}")
-      
+    ready = @selector.select(@timeout)
+    (ready || []).each do |m|
       begin
         if m.io.nil?
           log(Logger::WARN, "nil IO object")
@@ -62,16 +107,24 @@ class IOActors::SelectActor < Concurrent::Actor::RestartingContext
           log(Logger::DEBUG, "Closing #{m.io} -- already closed")
           close m
         else
-          m.value << :read
+          if [:r, :rw].member? m.readiness
+            m.value[:r] << :read if m.value[:r]
+            deregister m.io, :r
+          end
+
+          if [:w, :rw].member? m.readiness
+            m.value[:w] << :write if m.value[:w]
+            deregister m.io, :w
+          end
         end
       rescue IOError, Errno::EBADF, Errno::ECONNRESET
-        log(Logger::DEBUG, "Closing #{m.io} -- error")
         close m
       end
     end
   rescue Exception => e
     log(Logger::ERROR, e.to_s)
   ensure
-    self << :tick
+    ref << :tick
+    true
   end
 end

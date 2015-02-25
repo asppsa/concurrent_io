@@ -4,7 +4,7 @@ require 'concurrent/actor'
 
 module IOActors
   SelectMessage = Struct.new(:actor)
-  RegisterMessage = Struct.new(:io, :actor)
+  RegisterMessage = Struct.new(:io, :actor, :direction)
   DeregisterMessage = Struct.new(:io)
   InputMessage = Struct.new(:bytes)
   OutputMessage = Struct.new(:bytes)
@@ -25,12 +25,12 @@ require "io_actors/select_actor"
 require "io_actors/writer_actor"
 
 if ENV['IOACTORS_DEBUG']
-  L = Logger.new(STDOUT)
-
   Concurrent.configure do |c|
+    l = Logger.new(STDOUT)
+    limit = eval("Logger::#{ENV['IOACTORS_DEBUG']}")
     c.logger = lambda do |level, *params|
-      return unless level > Logger::DEBUG
-      L.add level, *params
+      return unless level >= limit
+      l.add level, *params
     end
   end
 end
