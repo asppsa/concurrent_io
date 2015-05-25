@@ -23,7 +23,7 @@ class IOActors::WriterActor < Concurrent::Actor::Context
 
   def close from_parent=false
     @io.close rescue nil
-    @selector << IOActors::DeregisterMessage.new(@io) if @selector
+    @selector << IOActors::DeregisterMessage.new(@io, :w) if @selector
     @io = nil
     @selector = nil
   rescue Exception => e

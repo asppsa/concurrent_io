@@ -22,7 +22,7 @@ class IOActors::ReaderActor < Concurrent::Actor::Context
 
   def close from_parent=false
     @io.close rescue nil
-    @selector << IOActors::DeregisterMessage.new(@io) if @selector
+    @selector << IOActors::DeregisterMessage.new(@io, :r) if @selector
     @io = nil
     @selector = nil
     @listener << :closed if @listener

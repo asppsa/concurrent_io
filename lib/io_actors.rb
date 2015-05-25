@@ -5,7 +5,7 @@ require 'concurrent/actor'
 module IOActors
   SelectMessage = Struct.new(:actor)
   RegisterMessage = Struct.new(:io, :actor, :direction)
-  DeregisterMessage = Struct.new(:io)
+  DeregisterMessage = Struct.new(:io, :direction)
   InputMessage = Struct.new(:bytes)
   OutputMessage = Struct.new(:bytes)
   InformMessage = Struct.new(:actor)
@@ -15,6 +15,10 @@ module IOActors
   class << self
     def selector
       @selector.value
+    end
+
+    def selector= selector
+      @selector.value = selector
     end
   end
 end

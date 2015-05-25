@@ -42,7 +42,7 @@ describe IOActors::ReaderActor do
 
   context "with a selector" do
     let(:selector) { IOActors::SelectActor.spawn('my_selector') }
-    after(:each) { selector.ask! :stop }
+    after(:each) { selector.ask! :stop rescue nil }
 
     it "can read a large number of bytes" do
       listener = []

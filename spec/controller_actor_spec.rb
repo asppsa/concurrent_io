@@ -106,7 +106,7 @@ describe IOActors::ControllerActor do
 
   context "with a selector" do
     let(:selector) { IOActors::SelectActor.spawn('my_selector') }
-    after(:each) { selector.ask! :stop }
+    after(:each) { selector.ask! :stop rescue nil }
 
     it "terminates on read if the IO object is already closed" do
       sockets[1].close
@@ -123,7 +123,7 @@ describe IOActors::ControllerActor do
       subject.ask! IOActors::SelectMessage.new(selector)
       subject.ask! :read
       sockets[1] << "test"
-      sleep 1
+      sleep 10
       expect(listener.map{ |i| i.bytes }.join).to eq("test")
 
       # Now close the IO object and wait a moment

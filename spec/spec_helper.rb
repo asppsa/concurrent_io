@@ -90,4 +90,6 @@ RSpec.configure do |config|
 =end
 end
 
+require 'bundler/setup'
+require 'ffi/libevent'
 require 'io_actors'

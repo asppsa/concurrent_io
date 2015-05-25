@@ -38,7 +38,7 @@ describe IOActors::WriterActor do
 
   context "with a selector" do
     let(:selector) { IOActors::SelectActor.spawn('my_selector') }
-    after(:each) { selector.ask! :stop }
+    after(:each) { selector.ask! :stop rescue nil }
 
     it "can write large numbers of bytes" do
       bytes = SecureRandom.random_bytes(1_000_000)

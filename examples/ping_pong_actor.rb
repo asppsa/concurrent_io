@@ -15,15 +15,17 @@ class PingPongActor < Concurrent::Actor::Context
     when :start
       @controller << 'ping'
     when :ping
-      log(Logger::INFO, "got PING")
+      log(Logger::WARN, "got PING")
       @controller << 'pong'
     when :pong
-      log(Logger::INFO, "got PONG")
+      log(Logger::WARN, "got PONG")
       @controller << 'ping'
     when :die
+      log(Logger::WARN, "got DIE")
       @controller.ask!(:close)
       terminate!
     when :closed
+      log(Logger::WARN, "got CLOSED")
       terminate!
     end
   end

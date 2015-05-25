@@ -3,7 +3,7 @@ describe IOActors::SelectActor do
   let(:sockets){ UNIXSocket.pair }
   subject{ described_class.spawn('my_selector') }
 
-  after(:each) { subject.ask! :stop }
+  after(:each){ subject.ask! :stop rescue nil }
 
   context "for reading" do
     it "passes :read messages to listeners" do
