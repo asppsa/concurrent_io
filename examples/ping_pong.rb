@@ -3,10 +3,16 @@
 require 'rubygems'
 require 'bundler/setup'
 require 'ffi/libevent'
+require 'nio'
 require 'io_actors'
 require_relative 'ping_pong_actor.rb'
 require 'concurrent/timer_task'
 require 'concurrent/utilities'
+
+# choose a select implementation
+IOActors.use_ffi_libevent!
+#IOActors.use_nio4r!
+#IOActors.use_select!
 
 # create socket pairs
 num = 10
@@ -17,17 +23,13 @@ pongers = []
 v = 0
 
 launch_pairs = proc do
-  begin
-    socket_pairs = num.times.map{ UNIXSocket.pair }
+  socket_pairs = num.times.map{ UNIXSocket.pair }
 
-    pingers = num.times.map{ |i| PingPongActor.spawn("pinger_#{v}_#{i}", socket_pairs[i][0]) }
-    pongers = num.times.map{ |i| PingPongActor.spawn("ponger_#{v}_#{i}", socket_pairs[i][1]) }
+  pingers = num.times.map{ |i| PingPongActor.spawn("pinger_#{v}_#{i}", socket_pairs[i][0]) }
+  pongers = num.times.map{ |i| PingPongActor.spawn("ponger_#{v}_#{i}", socket_pairs[i][1]) }
 
-    pingers.map do |pinger|
-      pinger << :start
-    end
-  rescue Exception => e
-    puts "#{e.to_s}\n#{e.backtrace}"
+  pingers.map do |pinger|
+    pinger << :start
   end
 end
 

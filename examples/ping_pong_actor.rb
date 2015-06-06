@@ -1,9 +1,7 @@
 class PingPongActor < Concurrent::Actor::Context
 
   def initialize io
-    @controller = IOActors::ControllerActor.spawn('controller', io)
-    @controller.ask! IOActors::SelectMessage.new(IOActors.selector)
-    @controller << :read
+    @controller = IOActors::Controller.spawn('controller', io)
     log(Logger::INFO, "New")
   end
 
@@ -21,11 +19,9 @@ class PingPongActor < Concurrent::Actor::Context
       log(Logger::WARN, "got PONG")
       @controller << 'ping'
     when :die
-      log(Logger::WARN, "got DIE")
       @controller.ask!(:close)
       terminate!
     when :closed
-      log(Logger::WARN, "got CLOSED")
       terminate!
     end
   end

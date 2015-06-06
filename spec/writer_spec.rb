@@ -1,7 +1,7 @@
 require 'securerandom'
 require 'digest/sha1'
 
-describe IOActors::WriterActor do
+describe IOActors::Writer do
 
   let(:sockets){ UNIXSocket.pair }
   
@@ -30,28 +30,9 @@ describe IOActors::WriterActor do
     expect(Digest::SHA1.hexdigest(input)).to eq(hash)
   end
 
-  it "closes its IO object on termination" do
-    subject.ask! :close
+  it "terminates on :stop" do
+    subject.ask! :stop
     expect(subject.ask!(:terminated?)).to be_truthy
-    expect(sockets[0].closed?).to be_truthy
-  end
-
-  context "with a selector" do
-    let(:selector) { IOActors::SelectActor.spawn('my_selector') }
-    after(:each) { selector.ask! :stop rescue nil }
-
-    it "can write large numbers of bytes" do
-      bytes = SecureRandom.random_bytes(1_000_000)
-      hash = Digest::SHA1.hexdigest bytes
-      subject.ask! IOActors::SelectMessage.new(IOActors.selector)
-      subject << bytes
-
-      input = ""
-      while input.bytesize < 1_000_000
-        input << sockets[1].recv(1_000_000 - input.bytesize)
-      end
-
-      expect(Digest::SHA1.hexdigest(input)).to eq(hash)
-    end
+    expect(sockets[0].closed?).to be_falsey
   end
 end

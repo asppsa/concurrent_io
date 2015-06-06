@@ -90,6 +90,7 @@ RSpec.configure do |config|
 =end
 end
 
+ENV['IOACTORS_DEBUG'] ||= 'ERROR'
 require 'bundler/setup'
 require 'ffi/libevent'
 require 'io_actors'

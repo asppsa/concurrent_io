@@ -1,36 +1,21 @@
-class IOActors::WriterActor < Concurrent::Actor::Context
+class IOActors::Writer < Concurrent::Actor::RestartingContext
 
   def initialize io
     @io = io
     @writes = []
-    @selector = nil
   end
 
   def on_message message
     case message
-    when IOActors::SelectMessage
-      @selector = message.actor
     when IOActors::OutputMessage
       append message.bytes
     when String
       append message
-    when :write
+    when :write, :reset!, :restart!
       write
-    when :close
-      close(envelope.sender == parent)
+    when :stop
+      terminate!
     end
-  end
-
-  def close from_parent=false
-    @io.close rescue nil
-    @selector << IOActors::DeregisterMessage.new(@io, :w) if @selector
-    @io = nil
-    @selector = nil
-  rescue Exception => e
-    log(Logger::ERROR, e.to_s)
-  ensure
-    parent << :close unless from_parent
-    terminate!
   end
 
   private
@@ -40,10 +25,7 @@ class IOActors::WriterActor < Concurrent::Actor::Context
     write
   end
 
-  def register
-    @selector << IOActors::RegisterMessage.new(@io, ref, :w) if @selector
-  end
-
+  ##
   # This method will write whatever it can out of the first item in
   # the write queue.  If it can't write it all, it puts the rest back
   def write
@@ -64,16 +46,16 @@ class IOActors::WriterActor < Concurrent::Actor::Context
       # more writes pending ...
       if num_bytes == 0
         @writes.unshift bytes
-        register
+        parent << IOActors::EnableWriteMessage.new(@io)
         break
       elsif num_bytes < bytes.bytesize
         @writes.unshift bytes.byteslice(num_bytes..bytes.bytesize)
-        register
+        parent << IOActors::EnableWriteMessage.new(@io)
         break
       end
     end
   rescue IOError, Errno::EPIPE, Errno::ECONNRESET
-    close
+    parent << IOActors::CloseMessage.new(@io)
   rescue Exception => e
     log(Logger::ERROR, e.to_s)
   ensure
