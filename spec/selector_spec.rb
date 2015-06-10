@@ -72,7 +72,8 @@ describe 'selectors' do
       subject << IOActors::WriteMessage.new(sockets[1], bytes)
 
       # Wait a while
-      sleep 0.5 while
+      start = Time.now
+      sleep 0.5 while Time.now - start < 10 and
         listener.
         map(&:bytes).
         map(&:bytesize).
@@ -82,6 +83,9 @@ describe 'selectors' do
       expect(listener.length).to be > 0
       received = listener.map(&:bytes).join
       expect(Digest::SHA1.hexdigest(received)).to eq hash
+
+      # Remove socket[1]
+      subject.ask! IOActors::RemoveMessage.new(sockets[1])
     end
   end
 
