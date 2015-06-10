@@ -1,22 +1,26 @@
 # Tell libevent that we are using threads
 FFI::Libevent.use_threads!
 
-class IOActors::FFILibeventSelector < Concurrent::Actor::RestartingContext
+class IOActors::FFILibeventSelector < Concurrent::Actor::Context
 
   def initialize timeout=nil, opts=nil
     @base = FFI::Libevent::Base.new(opts)
 
-    # Create a trapper event that stops the loop on SIGINT
+    # Create a trapper event that stops the loop on SIGINT, and then
+    # passes the interrupt on
+    r = ref
     @trapper = FFI::Libevent::Event.new(@base, "INT", :signal) do
-      ref << :stop
+      @base.loopbreak!
+      r << :stop
+      Process.kill("INT", Process.pid)
     end
     @trapper.add!
 
-    # # Create a pulse
-    # @pulse = FFI::Libevent::Event.new(@base, -1, :persist) do
-    #   puts "ping"
-    # end
-    # @pulse.add!(FFI::Libevent::Timeval.s 1)
+    # Create a pulse
+    @pulse = FFI::Libevent::Event.new(@base, -1, :persist) do
+      puts "ping"
+    end
+    @pulse.add!(FFI::Libevent::Timeval.s 1)
 
     @events = {}
 
@@ -27,7 +31,7 @@ class IOActors::FFILibeventSelector < Concurrent::Actor::RestartingContext
 
   def on_message message
     case message
-    when :run, :reset!, :restart!
+    when :run #, :reset!, :restart!
       begin
         @base.loopbreak! if @base
       ensure
@@ -50,11 +54,16 @@ class IOActors::FFILibeventSelector < Concurrent::Actor::RestartingContext
       begin
         if @base
           @base.loopbreak!
+
+          # Wait for the base to stop
+          while !@base.got_break?
+            sleep 0.1
+          end
         end
       rescue Exception => e
         log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
       ensure
-        # Garbage collect
+        # Encourage garbage collection
         @base = nil
         @events = nil
         terminate!
@@ -69,23 +78,15 @@ class IOActors::FFILibeventSelector < Concurrent::Actor::RestartingContext
 
   def run!
     # Start the loop in a separate thread
-    @p = Concurrent::Promise.fulfill(@base).then do |base|
+    @p = Concurrent::Promise.fulfill([ref,@base]).then do |ref,base|
       begin
-        base.loop!(:no_exit_on_empty)
+        unless base.loop!(:no_exit_on_empty) == 0
+          ref << :run
+        end
       rescue Exception => e
-        log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
-        raise e
-      end
-    end.then do |ret|
-      if ret == 1
-        log(Logger::INFO, "Restarting event loop")
+        puts "#{e.to_s}\n#{e.backtrace}"
         ref << :run
-      else
-        log(Logger::INFO, "Event loop is finished")
       end
-    end.rescue do |e|
-      log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
-      ref << :run
     end
 
     @p.execute
@@ -99,62 +100,21 @@ class IOActors::FFILibeventSelector < Concurrent::Actor::RestartingContext
   def add io, actor
     raise "already added" if @events.key?(io)
 
-
-    # Create an evbuffer for reading into.  This stays around because
-    # of the below closure
-    evb = FFI::Libevent::EvBuffer.new
-    
-    # This is called whenever a read occurs
-    on_read = proc do |bev|
-      begin
-        # Read into evbuffer
-        bev.read evb
-
-        # Get the new buffer's length
-        len = evb.length
-        if len > 0
-          actor << IOActors::InputMessage.new(evb.remove len)
-        end
-      rescue Exception => e
-        log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
-      end
-    end
-
-    # This occurs on certain error conditions, but it includes a
-    # "connect" event
-    on_event = proc do |bev,events|
-      begin
-        is_error = events & (FFI::Libevent::BEV_EVENT_ERROR |
-                             FFI::Libevent::BEV_EVENT_EOF |
-                             FFI::Libevent::BEV_EVENT_TIMEOUT) != 0
-
-        return unless is_error
-
-        # This is intended to render the bufferevent inert so that the
-        # socket can be closed
-        disable bev
-        ref << IOActors::CloseMessage.new(io)
-      rescue Exception => e
-        log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
-      end        
-    end
-
     # Create the bufferevent, enabled for both reading and writing
     bev = FFI::Libevent::BufferEvent.socket(@base, io)
-    bev.set_callbacks(read: on_read,
-                      event: on_event)
-    bev.enable!(FFI::Libevent::EV_READ |
-                FFI::Libevent::EV_WRITE)
+
+    # Create the callback object
+    event_handler = EventHandler.new(ref, io, actor)
+
+    # Set the methods from the object as libevent callbacks
+    bev.set_callbacks(read: event_handler.method(:on_read).to_proc,
+                      event: event_handler.method(:on_event).to_proc)
+
+    # Enable the bufferevent
+    bev.enable!
 
     @events[io] = [bev, actor]
     nil
-  rescue Exception => e
-    log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
-  end
-
-  def disable bev
-    bev.disable!(FFI::Libevent::EV_READ | FFI::Libevent::EV_WRITE)
-    bev.set_callbacks read: nil, event: nil
   rescue Exception => e
     log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
   end
@@ -172,7 +132,8 @@ class IOActors::FFILibeventSelector < Concurrent::Actor::RestartingContext
   def remove io
     if data = @events.delete(io)
       bev, actor = data
-      disable bev
+      bev.disable!
+      bev.unset_callbacks
       actor
     end
   rescue Exception => e
@@ -189,5 +150,70 @@ class IOActors::FFILibeventSelector < Concurrent::Actor::RestartingContext
   rescue Exception => e
     log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
   end
-end
 
+  ##
+  # This is a special variety of InputMessage that takes an EvBuffer
+  # instead of a string.
+  class InputMessage < IOActors::InputMessage
+    def bytes
+      evb = super
+      len = evb.length
+      if len > 0
+        evb.copyout len
+      else
+        ""
+      end
+    end
+  end
+
+  ##
+  # These methods are used as callbacks in libevent.  They are kept
+  # here to ensure that they don't accidentally access the actor's
+  # variables.  Because libevent itself is single-threaded, it's safe
+  # to share variables between the callbacks though.
+  class EventHandler
+    def initialize ref, io, actor
+      @actor = actor
+      @ref = ref
+      @io = io
+    end
+
+    ##
+    # This is called whenever a read occurs
+    def on_read bev
+      # Create an empty EvBuffer
+      evb = FFI::Libevent::EvBuffer.new
+
+      # Read into evbuffer
+      bev.read evb
+
+      # Pass the evb to the listener in a special subclassed
+      # InputMessage.  This saves on a memory copy that would
+      # otherwise need to happen in this thread
+      @actor << InputMessage.new(evb)
+    rescue Exception => e
+      puts "#{e.to_s}\n#{e.backtrace}"
+    end
+
+    ##
+    # This occurs on certain error conditions, but it includes a
+    # "connect" event
+    def on_event bev, events
+      is_error = events & (FFI::Libevent::BEV_EVENT_ERROR |
+                           FFI::Libevent::BEV_EVENT_EOF |
+                           FFI::Libevent::BEV_EVENT_TIMEOUT) != 0
+
+      return unless is_error
+
+      # This is intended to render the bufferevent inert so that the
+      # socket can be closed
+      bev.disable!
+      bev.unset_callbacks
+
+      # Tell the actor to close this eventbuffer
+      @ref << IOActors::CloseMessage.new(@io)
+    rescue Exception => e
+      puts "#{e.to_s}\n#{e.backtrace}"
+    end
+  end
+end
