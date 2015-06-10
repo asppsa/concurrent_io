@@ -1,5 +1,5 @@
 module IOActors
-  class Selector < Concurrent::Actor::RestartingContext
+  class Selector < Concurrent::Actor::Context
 
     def initialize timeout=0.1
       @timeout = timeout or raise "timeout cannot be nil"
@@ -20,7 +20,7 @@ module IOActors
 
     def on_message message
       case message
-      when :tick, :reset!, :restart!
+      when :tick #, :reset!, :restart!
         tick
 
       when IOActors::AddMessage
@@ -50,6 +50,7 @@ module IOActors
     private
 
     def tick
+      log(Logger::WARN, "TICK")
       if ready = IO.select(@read_active, @write_active, @all, @timeout)
         to_read, to_write, to_error = ready
 
@@ -130,8 +131,13 @@ module IOActors
     end
 
     def remove io
-      @readers.delete(io) << :stop rescue nil
-      @writers.delete(io) << :stop rescue nil
+      if reader = @readers.delete(io)
+        reader << :stop
+      end
+
+      if writer = @writers.delete(io)
+        writer << :stop
+      end
 
       @read_active.delete io
       @read_inactive.delete io
