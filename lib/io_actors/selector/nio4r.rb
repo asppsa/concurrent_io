@@ -1,6 +1,6 @@
 require 'nio'
 
-class IOActors::NIO4RSelector < Concurrent::Actor::RestartingContext
+class IOActors::NIO4RSelector < Concurrent::Actor::Context
 
   def initialize timeout=0.1
     @timeout = timeout or raise "timeout cannot be nil"
@@ -24,7 +24,7 @@ class IOActors::NIO4RSelector < Concurrent::Actor::RestartingContext
 
   def on_message message
     case message
-    when :tick, :reset!, :restart!
+    when :tick #, :reset!, :restart!
       tick
 
     when IOActors::AddMessage
@@ -92,8 +92,13 @@ class IOActors::NIO4RSelector < Concurrent::Actor::RestartingContext
     return unless @registered.key?(io)
 
     # Delete reader and writer
-    @readers.delete(io) << :stop rescue nil
-    @writers.delete(io) << :stop rescue nil
+    if reader = @readers.delete(io)
+      reader << :stop
+    end
+
+    if writer = @writers.delete(io)
+      writer << :stop
+    end
 
     # Completely deregister
     monitor = @selector.deregister(io)
@@ -161,6 +166,10 @@ class IOActors::NIO4RSelector < Concurrent::Actor::RestartingContext
 
     # Wakeup (does this actually work?)
     @selector.wakeup
+  rescue IOError
+    close io
+  rescue Exception => e
+    log(Logger::ERROR, "#{e.class}: #{e.to_s}\n#{e.backtrace}")
   end
 
   def close io
