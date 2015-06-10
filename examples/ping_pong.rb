@@ -5,6 +5,9 @@ require 'bundler/setup'
 require 'ffi/libevent'
 require 'nio'
 require 'io_actors'
+require 'io_actors/selector/nio4r'
+require 'io_actors/selector/ffi_libevent'
+
 require_relative 'ping_pong_actor.rb'
 require 'concurrent/timer_task'
 require 'concurrent/utilities'
@@ -22,6 +25,27 @@ pingers = []
 pongers = []
 v = 0
 
+module PingPongStats
+  @pings = Concurrent::AtomicFixnum.new
+  @pongs = Concurrent::AtomicFixnum.new
+
+  def self.inc_pings
+    @pings.increment
+  end
+
+  def self.pings
+    @pings.value
+  end
+
+  def self.inc_pongs
+    @pongs.increment
+  end
+
+  def self.pongs
+    @pongs.value
+  end
+end
+
 launch_pairs = proc do
   socket_pairs = num.times.map{ UNIXSocket.pair }
 
@@ -34,7 +58,7 @@ launch_pairs = proc do
 end
 
 # Every 2 seconds kill and restart everything
-Concurrent::TimerTask.execute(execution_interval: interval, timeout_interval: interval) do
+Concurrent::TimerTask.execute(execution_interval: interval, timeout_interval: interval, now: true) do
   while p = pingers.shift
     p << :die
   end
@@ -50,50 +74,91 @@ Concurrent::TimerTask.execute(execution_interval: interval, timeout_interval: in
   launch_pairs.call
 end
 
-# # # Every five seconds check on the number of objects in memory
-# Concurrent::TimerTask.execute(execution_interval: 5, timeout_interval: 5) do
-#   stats = {:terminated => {},
-#            :alive => {}}
+# # Every five seconds check on the number of objects in memory
+Concurrent::TimerTask.execute(execution_interval: 5, timeout_interval: 5, now: true) do
+  stats = {:terminated => {},
+           :alive => {}}
 
-#   ObjectSpace.garbage_collect
-#   actors = ObjectSpace.each_object(Concurrent::Actor::Reference) do |a|
-#     k = if a.ask!(:terminated?)
-#           :terminated
-#         else
-#           :alive
-#         end
+  ObjectSpace.each_object(Concurrent::Actor::Reference) do |a|
+    k = if a.ask!(:terminated?)
+          :terminated
+        else
+          :alive
+        end
 
-#     cl = if a.context_class == IOActors::ControllerActor
-#            :controller_actor
-#          elsif a.context_class == IOActors::ReaderActor
-#            :reader_actor
-#          elsif a.context_class == IOActors::WriterActor
-#            :writer_actor
-#          elsif a.context_class == IOActors::SelectActor
-#            :select_actor
-#          elsif a.context_class == PingPongActor
-#            :ping_pong_actor
-#          end
+    cl = if a.actor_class == IOActors::Controller
+           :controller
+         elsif a.actor_class == IOActors::Reader
+           :reader
+         elsif a.actor_class == IOActors::Writer
+           :writer
+         elsif [IOActors::Selector, IOActors::NIO4RSelector, IOActors::FFILibeventSelector].any?{ |c| a.actor_class == c }
+           :selector
+         elsif a.actor_class == PingPongActor
+           :ping_pong_actor
+         else
+           :other
+         end
 
-#     stats[k][cl] ||= 0
-#     stats[k][cl] += 1
-#   end
+    stats[k][cl] ||= 0
+    stats[k][cl] += 1
+  end
 
-#   puts %{
-# TOTAL: #{stats.map{ |k,v| v.map{ |k,v| v }.inject(0, :+) }.inject(0, :+)}
-# TERMINATED: #{ stats[:terminated].map{|k,v| v}.inject(0, :+) }
-#  - ControllerActor: #{ stats[:terminated][:controller_actor] }
-#  - ReaderActor: #{ stats[:terminated][:reader_actor] }
-#  - WriterActor: #{ stats[:terminated][:writer_actor] }
-#  - SelectActor: #{ stats[:terminated][:select_actor] }
-#  - PingPongActor: #{ stats[:terminated][:ping_pong_actor] }
-# ALIVE: #{ stats[:alive].map{ |k,v| v }.inject(0, :+) }
-#  - ControllerActor: #{ stats[:alive][:controller_actor] }
-#  - ReaderActor: #{ stats[:alive][:reader_actor] }
-#  - WriterActor: #{ stats[:alive][:writer_actor] }
-#  - SelectActor: #{ stats[:alive][:select_actor] }
-#  - PingPongActor: #{ stats[:alive][:ping_pong_actor] }
-# }
-# end
+  puts %{
+PINGS: #{ PingPongStats.pings }
+PONGS: #{ PingPongStats.pongs }
+}
+
+  puts %{
+TOTAL: #{stats.map{ |k,v| v.map{ |k,v| v }.inject(0, :+) }.inject(0, :+)}
+TERMINATED: #{ stats[:terminated].map{|k,v| v}.inject(0, :+) }
+ - Controller: #{ stats[:terminated][:controller] || 0 }
+ - Reader: #{ stats[:terminated][:reader] || 0 }
+ - Writer: #{ stats[:terminated][:writer] || 0 }
+ - Selector: #{ stats[:terminated][:selector] || 0 }
+ - PingPongActor: #{ stats[:terminated][:ping_pong_actor] || 0 }
+ - Other:  #{ stats[:terminated][:other] || 0 }
+ALIVE: #{ stats[:alive].map{ |k,v| v }.inject(0, :+) }
+ - Controller: #{ stats[:alive][:controller] || 0 }
+ - Reader: #{ stats[:alive][:reader] || 0 }
+ - Writer: #{ stats[:alive][:writer] || 0 }
+ - Selector: #{ stats[:alive][:selector] || 0 }
+ - PingPongActor: #{ stats[:alive][:ping_pong_actor] || 0 }
+ - Other:  #{ stats[:alive][:other] || 0 }
+}
+
+  bev_count = 0
+  read_enabled = 0
+  write_enabled = 0
+  ObjectSpace.each_object(FFI::Libevent::BufferEvent) do |bev|
+    bev_count += 1
+    read_enabled += 1 if bev.enabled? :read
+    write_enabled += 1 if bev.enabled? :write
+  end
+
+  puts %{
+bufferevents: #{bev_count}
+read enabled: #{read_enabled}
+write enabled: #{write_enabled}
+}
+
+  io_count = 0
+  io_open = 0
+  io_closed = 0
+  ObjectSpace.each_object(IO) do |io|
+    io_count += 1
+    if io.closed?
+      io_closed += 1
+    else
+      io_open += 1
+    end
+  end
+
+  puts %{
+IO: #{io_count}
+IO open: #{io_open}
+IO closed: #{io_closed}
+}
+end
 
 sleep 1 while true
