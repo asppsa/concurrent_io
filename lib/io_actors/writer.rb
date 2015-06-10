@@ -1,4 +1,4 @@
-class IOActors::Writer < Concurrent::Actor::RestartingContext
+class IOActors::Writer < Concurrent::Actor::Context
 
   def initialize io
     @io = io
@@ -11,7 +11,7 @@ class IOActors::Writer < Concurrent::Actor::RestartingContext
       append message.bytes
     when String
       append message
-    when :write, :reset!, :restart!
+    when :write #, :reset!, :restart!
       write
     when :stop
       terminate!

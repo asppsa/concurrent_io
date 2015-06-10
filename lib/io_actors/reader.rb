@@ -1,4 +1,4 @@
-class IOActors::Reader < Concurrent::Actor::RestartingContext
+class IOActors::Reader < Concurrent::Actor::Context
 
   def initialize io, listener, buffer_size=4096
     @io = io
@@ -8,7 +8,7 @@ class IOActors::Reader < Concurrent::Actor::RestartingContext
 
   def on_message message
     case message
-    when :read, :reset!, :restart!
+    when :read #, :reset!, :restart!
       read
     when :stop
       terminate!
