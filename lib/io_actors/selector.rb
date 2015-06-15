@@ -50,7 +50,8 @@ module IOActors
     private
 
     def tick
-      log(Logger::WARN, "TICK")
+      log(Logger::WARN, "TICK -- reading: #{@read_active.length}; writing: #{@write_active.length}; all: #{@all.length}")
+
       if ready = IO.select(@read_active, @write_active, @all, @timeout)
         to_read, to_write, to_error = ready
 
@@ -63,9 +64,8 @@ module IOActors
         to_error.each(&method(:close))
       end
     rescue IOError
-      # Remove closed fds, then try again
-      @all.select(&:closed?).map(&method(:close))
-      retry
+      # Remove closed fds & tick
+      @all.select(&:closed?).each(&method(:close))
     rescue Exception => e
       log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
     ensure
@@ -73,6 +73,9 @@ module IOActors
     end
 
     def enable_read io
+      # Don't add if it's been removed/killed already
+      return unless @actors.key?(io)
+
       case io
       when Array
         @read_inactive -= io
@@ -81,6 +84,8 @@ module IOActors
         @read_inactive.delete io
         @read_active.push io
       end
+    rescue Exception => e
+      log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
     end
 
     def disable_read io
@@ -92,9 +97,14 @@ module IOActors
         @read_active.delete io
         @read_inactive.push io
       end
+    rescue Exception => e
+      log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
     end
 
     def enable_write io
+      # Don't add if it's been removed/killed already
+      return unless @actors.key?(io)
+
       case io
       when Array
         @write_inactive -= io
@@ -103,6 +113,8 @@ module IOActors
         @write_inactive.delete io
         @write_active.push io
       end
+    rescue Exception => e
+      log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
     end
 
     def disable_write io
@@ -114,20 +126,24 @@ module IOActors
         @write_active.delete io
         @write_inactive.push io
       end
+    rescue Exception => e
+      log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
     end
 
     def add io, actor
       raise "already added" if @all.member?(io)
 
       @readers[io] = IOActors::Reader.spawn('reader', io, actor)
-      enable_read io
-
       @writers[io] = IOActors::Writer.spawn('writer', io)
+      @actors[io] = actor
+
+      enable_read io
       disable_write io
 
-      @actors[io] = actor
       @all.push io
       true
+    rescue Exception => e
+      log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
     end
 
     def remove io
@@ -143,11 +159,12 @@ module IOActors
       @read_inactive.delete io
       @write_active.delete io
       @write_inactive.delete io
-
       @all.delete io
 
       # Return the actor
       @actors.delete(io)
+    rescue Exception => e
+      log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
     end
 
     def close io
@@ -164,6 +181,8 @@ module IOActors
       if writer = @writers[io]
         writer << bytes
       end
+    rescue Exception => e
+      log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
     end
   end
 end
