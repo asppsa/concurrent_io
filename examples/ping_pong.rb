@@ -13,12 +13,12 @@ require 'concurrent/timer_task'
 require 'concurrent/utilities'
 
 # choose a select implementation
-IOActors.use_ffi_libevent!
+#IOActors.use_ffi_libevent!
 #IOActors.use_nio4r!
-#IOActors.use_select!
+IOActors.use_select!
 
 # create socket pairs
-num = 10
+num = 100
 interval = 10
 socket_pairs = []
 pingers = []
