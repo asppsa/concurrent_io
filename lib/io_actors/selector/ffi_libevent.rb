@@ -9,18 +9,12 @@ class IOActors::FFILibeventSelector < Concurrent::Actor::Context
     # Create a trapper event that stops the loop on SIGINT, and then
     # passes the interrupt on
     r = ref
-    @trapper = FFI::Libevent::Event.new(@base, "INT", :signal) do
-      @base.loopbreak!
+    @trapper = FFI::Libevent::Event.new(@base, "INT", :signal) do |_,_,base|
+      base.loopbreak!
       r << :stop
       Process.kill("INT", Process.pid)
     end
     @trapper.add!
-
-    # Create a pulse
-    @pulse = FFI::Libevent::Event.new(@base, -1, :persist) do
-      puts "ping"
-    end
-    @pulse.add!(FFI::Libevent::Timeval.s 1)
 
     @events = {}
 
@@ -52,6 +46,10 @@ class IOActors::FFILibeventSelector < Concurrent::Actor::Context
 
     when :stop
       begin
+        if @trapper
+          @trapper.del!
+        end
+
         if @base
           @base.loopbreak!
 
@@ -64,8 +62,7 @@ class IOActors::FFILibeventSelector < Concurrent::Actor::Context
         log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
       ensure
         # Encourage garbage collection
-        @base = nil
-        @events = nil
+        @base = @events = @trapper = nil
         terminate!
       end
 

@@ -40,6 +40,7 @@ module IOActors
     def spawn_selector name
       try_ffi_libevent(name) ||
         try_nio4r(name) ||
+        try_eventmachine(name) ||
         spawn_select_selector(name)
     end
 
@@ -69,6 +70,15 @@ module IOActors
       Selector.spawn(name)
     end
 
+    def use_eventmachine!
+      replace_default_selector!{ spawn_eventmachine_selector(@default_selector_name) }
+    end
+
+    def spawn_eventmachine_selector name
+      require_relative 'io_actors/selector/eventmachine'
+      EventMachineSelector.spawn(name)
+    end
+
     private
 
     def try_nio4r name
@@ -79,6 +89,12 @@ module IOActors
 
     def try_ffi_libevent name
       spawn_ffi_libevent_selector name
+    rescue
+      nil
+    end
+
+    def try_eventmachine name
+      spawn_eventmachine_selector name
     rescue
       nil
     end

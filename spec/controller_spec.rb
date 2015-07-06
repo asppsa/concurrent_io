@@ -81,4 +81,13 @@ describe IOActors::Controller do
     let(:selector) { IOActors::NIO4RSelector.spawn('my_selector') }
     include_examples :controller
   end
+
+  context "using eventmachine selector" do
+    before(:context) do
+      require 'io_actors/selector/eventmachine'
+    end
+
+    let(:selector) { IOActors::EventMachineSelector.spawn('my_selector') }
+    include_examples :controller
+  end
 end

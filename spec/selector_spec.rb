@@ -11,7 +11,12 @@ describe 'selectors' do
 
     it "passes InputMessage objects to listeners" do
       sockets[1].send("test", 0)
-      sleep 0.2
+
+      # Wait a while
+      start = Time.now
+      sleep 0.2 while Time.now - start < 10 and
+        listener.length < 1
+
       expect(listener.length).to eq 1
       expect(listener.first).to be_a IOActors::InputMessage
       expect(listener.first.bytes).to eq 'test'
@@ -100,6 +105,11 @@ describe 'selectors' do
 
   require 'io_actors/selector/nio4r'
   describe IOActors::NIO4RSelector do
+    include_examples :selector
+  end
+
+  require 'io_actors/selector/eventmachine'
+  describe IOActors::EventMachineSelector do
     include_examples :selector
   end
 end

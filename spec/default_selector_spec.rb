@@ -78,5 +78,20 @@ describe IOActors do
         expect(IOActors.default_selector.actor_class).to be IOActors::NIO4RSelector
       end
     end
+
+    context "using EventMachine" do
+      before do
+        IOActors.use_eventmachine!
+      end
+
+      after do
+        IOActors.reset_default_selector!
+      end
+      include_examples :returns
+
+      it "returns a EventMachineSelector" do
+        expect(IOActors.default_selector.actor_class).to be IOActors::EventMachineSelector
+      end
+    end
   end
 end
