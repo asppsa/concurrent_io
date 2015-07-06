@@ -2,8 +2,8 @@ require 'securerandom'
 
 class PingPongActor < Concurrent::Actor::Context
 
-  PING = SecureRandom.random_bytes(100)
-  PONG = SecureRandom.random_bytes(100)
+  PING = SecureRandom.random_bytes(1000)
+  PONG = SecureRandom.random_bytes(1000)
 
   def initialize io
     @received = ""
@@ -14,7 +14,7 @@ class PingPongActor < Concurrent::Actor::Context
   def on_message message
     case message
     when IOActors::InputMessage
-      @received.append message.bytes
+      @received << message.bytes
       dispatch_received
     when :start
       @controller << PING

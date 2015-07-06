@@ -14,8 +14,9 @@ require 'concurrent/utilities'
 
 # choose a select implementation
 #IOActors.use_ffi_libevent!
-#IOActors.use_nio4r!
-IOActors.use_select!
+IOActors.use_nio4r!
+#IOActors.use_select!
+#IOActors.use_eventmachine!
 
 # create socket pairs
 num = 100
