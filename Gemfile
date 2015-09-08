@@ -4,12 +4,13 @@ source 'https://rubygems.org'
 gemspec
 
 # An important bugfix
-gem 'concurrent-ruby', '0.8.0', :github => 'ruby-concurrency/concurrent-ruby', :tag => '0c0177bb430af26f085038299169fd1762270eec'
+gem 'concurrent-ruby', '1.0.0.pre1', :github => 'ruby-concurrency/concurrent-ruby'
+gem 'concurrent-ruby-edge'
 
 # Currently only available from github
 gem "ffi-libevent", :github => 'asppsa/ffi-libevent'
 
 # Makes MRI snappier
 platform :mri do
-  gem "concurrent-ruby-ext", "0.8.0"
+  gem "concurrent-ruby-ext"
 end
