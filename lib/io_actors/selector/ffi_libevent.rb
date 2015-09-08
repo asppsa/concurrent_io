@@ -97,6 +97,9 @@ class IOActors::FFILibeventSelector < Concurrent::Actor::Context
   def add io, actor
     raise "already added" if @events.key?(io)
 
+    # Set the io object to non-blocking
+    FFI::Libevent::Util.make_socket_nonblocking io
+
     # Create the bufferevent, enabled for both reading and writing
     bev = FFI::Libevent::BufferEvent.socket(@base, io)
 
