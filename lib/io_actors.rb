@@ -1,4 +1,5 @@
 require 'concurrent'
+require 'concurrent/actor'
 
 module IOActors
   InputMessage = Struct.new(:bytes)
@@ -12,7 +13,7 @@ module IOActors
   EnableWriteMessage = Struct.new(:io)
 
   @default_selector_name = 'default_selector'
-  @default_selector = Concurrent::Atomic.new(nil)
+  @default_selector = Concurrent::AtomicReference.new(nil)
 
   class << self
     def default_selector
@@ -112,8 +113,8 @@ if ENV['IOACTORS_DEBUG']
   limit = eval("Logger::#{ENV['IOACTORS_DEBUG']}")
   l.level = limit
 
-  Concurrent.configure do |c|
-    c.logger = l.method(:add)
+  Concurrent.global_logger = lambda do |loglevel, progname, message = nil, &block|
+    l.add loglevel, message, progname, &block
   end
 
   if Kernel.const_defined?(:FFI) && FFI.const_defined?(:Libevent)
