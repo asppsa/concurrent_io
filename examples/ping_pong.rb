@@ -76,41 +76,53 @@ Concurrent::TimerTask.execute(execution_interval: interval, timeout_interval: in
 end
 
 # # Every five seconds check on the number of objects in memory
-Concurrent::TimerTask.execute(execution_interval: 5, timeout_interval: 5, now: true) do
-  stats = {:terminated => {},
-           :alive => {}}
+loop do
+  begin
+    now = Time.now.to_s
+    puts now
+    puts("=" * now.length)
+    puts
 
-  ObjectSpace.each_object(Concurrent::Actor::Reference) do |a|
-    k = if a.ask!(:terminated?)
-          :terminated
-        else
-          :alive
-        end
+    ObjectSpace.each_object(Concurrent::ThreadPoolExecutor) do |exec|
+      puts "QUEUE LENGTH: #{exec.queue_length} / #{exec.max_queue}"
+      puts "POOL SIZE: #{exec.length}"
+    end
 
-    cl = if a.actor_class == IOActors::Controller
-           :controller
-         elsif a.actor_class == IOActors::Reader
-           :reader
-         elsif a.actor_class == IOActors::Writer
-           :writer
-         elsif [IOActors::Selector, IOActors::NIO4RSelector, IOActors::FFILibeventSelector].any?{ |c| a.actor_class == c }
-           :selector
-         elsif a.actor_class == PingPongActor
-           :ping_pong_actor
-         else
-           :other
-         end
+    stats = {:terminated => {},
+             :alive => {}}
 
-    stats[k][cl] ||= 0
-    stats[k][cl] += 1
-  end
+    ObjectSpace.each_object(Concurrent::Actor::Reference) do |a|
+      k = if a.ask!(:terminated?)
+            :terminated
+          else
+            :alive
+          end
 
-  puts %{
+      cl = if a.actor_class == IOActors::Controller
+             :controller
+           elsif a.actor_class == IOActors::Reader
+             :reader
+           elsif a.actor_class == IOActors::Writer
+             :writer
+           elsif [IOActors::Selector, IOActors::NIO4RSelector, IOActors::FFILibeventSelector].any?{ |c| a.actor_class == c }
+             :selector
+           elsif a.actor_class == PingPongActor
+             :ping_pong_actor
+           else
+             :other
+           end
+
+      stats[k][cl] ||= 0
+      stats[k][cl] += 1
+    end
+
+
+    puts %{
 PINGS: #{ PingPongStats.pings }
 PONGS: #{ PingPongStats.pongs }
 }
 
-  puts %{
+    puts %{
 TOTAL: #{stats.map{ |k,v| v.map{ |k,v| v }.inject(0, :+) }.inject(0, :+)}
 TERMINATED: #{ stats[:terminated].map{|k,v| v}.inject(0, :+) }
  - Controller: #{ stats[:terminated][:controller] || 0 }
@@ -128,38 +140,45 @@ ALIVE: #{ stats[:alive].map{ |k,v| v }.inject(0, :+) }
  - Other:  #{ stats[:alive][:other] || 0 }
 }
 
-  bev_count = 0
-  read_enabled = 0
-  write_enabled = 0
-  ObjectSpace.each_object(FFI::Libevent::BufferEvent) do |bev|
-    bev_count += 1
-    read_enabled += 1 if bev.enabled? :read
-    write_enabled += 1 if bev.enabled? :write
-  end
+    bev_count = 0
+    read_enabled = 0
+    write_enabled = 0
+    ObjectSpace.each_object(FFI::Libevent::BufferEvent) do |bev|
+      bev_count += 1
+      begin
+        read_enabled += 1 if bev.enabled? :read
+        write_enabled += 1 if bev.enabled? :write
+      rescue ArgumentError
+      end
+    end
 
-  puts %{
+    puts %{
 bufferevents: #{bev_count}
 read enabled: #{read_enabled}
 write enabled: #{write_enabled}
 }
 
-  io_count = 0
-  io_open = 0
-  io_closed = 0
-  ObjectSpace.each_object(IO) do |io|
-    io_count += 1
-    if io.closed?
-      io_closed += 1
-    else
-      io_open += 1
+    io_count = 0
+    io_open = 0
+    io_closed = 0
+    ObjectSpace.each_object(IO) do |io|
+      io_count += 1
+      if io.closed?
+        io_closed += 1
+      else
+        io_open += 1
+      end
     end
-  end
 
-  puts %{
+    puts %{
 IO: #{io_count}
 IO open: #{io_open}
 IO closed: #{io_closed}
-}
-end
 
-sleep 1 while true
+}
+  rescue Exception => e
+    puts e.to_s
+  ensure
+    sleep 5
+  end
+end
