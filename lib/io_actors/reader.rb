@@ -1,49 +1,48 @@
-class IOActors::Reader < Concurrent::Actor::Context
+class IOActors::Reader
+  include Concurrent::Concern::Logging
 
-  def initialize io, listener, buffer_size=4096
+  def initialize selector, io, listener, buffer_size=4096
+    @selector = selector
     @io = io
-    @buffer_size = buffer_size
     @listener = listener
+    @buffer_size = buffer_size
   end
 
-  def on_message message
-    case message
-    when :read #, :reset!, :restart!
-      read
-    when :stop
-      terminate!
-    end
-  end
+  ##
+  # Reads as much from the IO as possible in non-blocking mode
+  def read!
+    Concurrent::Future.execute(:executor => :fast) do
+      begin
+        # Read bytes if any are available.
+        total = 0
+        loop do
+          bytes = begin
+                    @io.read_nonblock(@buffer_size)
+                  rescue IO::WaitReadable
+                    nil
+                  end
 
-  private
+          if bytes
+            total += bytes.bytesize
+            @listener.trigger_read(bytes)
+          end
 
-  def read
-    # Read bytes if any are available.
-    total = 0
-    loop do
-      bytes = begin
-                @io.read_nonblock(@buffer_size)
-              rescue IO::WaitReadable
-                nil
-              end
-
-      if bytes
-        total += bytes.bytesize
-        @listener << IOActors::InputMessage.new(bytes) if @listener
+          # Keep reading if we filled the string.  Otherwise if there is a
+          # selector, ask it to notify us when there's something available.
+          if bytes.nil? || bytes.bytesize < @buffer_size
+            @selector.enable_read @io
+            break
+          end
+        end
+      rescue IOError, Errno::EBADF, Errno::ECONNRESET => e
+        @listener.trigger_error e
+        @selector.remove [@io]
+      rescue => e
+        log(Logger::ERROR, self.to_s + '#read!', e.to_s)
+        @selector.enable_read @io
+      ensure
+        return total
       end
-
-      # Keep reading if we filled the string.  Otherwise if there is a
-      # selector, ask it to notify us when there's something available.
-      if bytes.nil? || bytes.bytesize < @buffer_size
-        parent << IOActors::EnableReadMessage.new(@io) if parent
-        break
-      end
     end
-  rescue IOError, Errno::EBADF, Errno::ECONNRESET
-    parent << IOActors::CloseMessage.new(@io) if parent
-  rescue Exception => e
-    log(Logger::ERROR, e.to_s)
-  ensure
-    total
   end
 end

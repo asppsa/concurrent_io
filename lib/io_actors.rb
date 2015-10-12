@@ -1,24 +1,12 @@
 require 'concurrent'
-require 'concurrent/actor'
 
 module IOActors
-  InputMessage = Struct.new(:bytes)
-  OutputMessage = Struct.new(:bytes)
-  WriteMessage = Struct.new(:io, :bytes)
-  AddMessage = Struct.new(:io, :actor)
-  RemoveMessage = Struct.new(:io)
-  CloseMessage = Struct.new(:io)
-  InformMessage = Struct.new(:listener)
-  EnableReadMessage = Struct.new(:io)
-  EnableWriteMessage = Struct.new(:io)
-
-  @default_selector_name = 'default_selector'
   @default_selector = Concurrent::AtomicReference.new(nil)
 
   class << self
     def default_selector
       @default_selector.value || @default_selector.update do |old_selector|
-        old_selector || spawn_selector(@default_selector_name)
+        old_selector || new_selector
       end
     end
 
@@ -27,8 +15,8 @@ module IOActors
     # has been stopped before the new one is started
     def replace_default_selector! &block
       @default_selector.update do |old_selector|
-        old_selector.ask!(:stop) if
-          old_selector && old_selector.respond_to?(:ask!)
+        old_selector.stop! if
+          old_selector && old_selector.respond_to?(:stop!)
 
         block.call
       end
@@ -38,64 +26,64 @@ module IOActors
       replace_default_selector!{ nil }
     end
 
-    def spawn_selector name
-      try_ffi_libevent(name) ||
-        try_nio4r(name) ||
-        try_eventmachine(name) ||
-        spawn_select_selector(name)
+    def new_selector
+      try_ffi_libevent ||
+        try_nio4r ||
+        try_eventmachine ||
+        new_select_selector
     end
 
     def use_ffi_libevent!
-      replace_default_selector!{ spawn_ffi_libevent_selector(@default_selector_name) }
+      replace_default_selector!{ new_ffi_libevent_selector }
     end
 
-    def spawn_ffi_libevent_selector name
+    def new_ffi_libevent_selector
       require_relative 'io_actors/selector/ffi_libevent'
-      FFILibeventSelector.spawn(name)
+      FFILibeventSelector.new
     end
 
     def use_nio4r!
-      replace_default_selector!{ spawn_nio4r_selector(@default_selector_name) }
+      replace_default_selector!{ new_nio4r_selector(@default_selector_name) }
     end
 
-    def spawn_nio4r_selector name
+    def new_nio4r_selector name
       require_relative 'io_actors/selector/nio4r'
-      NIO4RSelector.spawn(name)
+      NIO4RSelector.new
     end
 
     def use_select!
-      replace_default_selector!{ spawn_select_selector(@default_selector_name) }
+      replace_default_selector!{ new_select_selector }
     end
 
-    def spawn_select_selector name
-      Selector.spawn(name)
+    def new_select_selector
+      Selector.new
     end
 
     def use_eventmachine!
-      replace_default_selector!{ spawn_eventmachine_selector(@default_selector_name) }
+      replace_default_selector!{ new_eventmachine_selector(@default_selector_name) }
     end
 
-    def spawn_eventmachine_selector name
+    def new_eventmachine_selector name
       require_relative 'io_actors/selector/eventmachine'
-      EventMachineSelector.spawn(name)
+      EventMachineSelector.new(name)
     end
 
     private
 
     def try_nio4r name
-      spawn_nio4r name
+      new_nio4r name
     rescue
       nil
     end
 
     def try_ffi_libevent name
-      spawn_ffi_libevent_selector name
+      new_ffi_libevent_selector name
     rescue
       nil
     end
 
     def try_eventmachine name
-      spawn_eventmachine_selector name
+      new_eventmachine_selector name
     rescue
       nil
     end
@@ -103,7 +91,9 @@ module IOActors
 end
 
 require "io_actors/version"
-require "io_actors/controller"
+#require "io_actors/controller"
+require "io_actors/listener"
+require "io_actors/selector/basic"
 require "io_actors/selector"
 require "io_actors/reader"
 require "io_actors/writer"

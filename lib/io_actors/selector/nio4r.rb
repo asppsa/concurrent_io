@@ -1,221 +1,194 @@
 require 'nio'
 
-class IOActors::NIO4RSelector < Concurrent::Actor::Context
+module IOActors 
 
-  def initialize timeout=0.1
-    @timeout = timeout or raise "timeout cannot be nil"
-    @selector = NIO::Selector.new
+  class NIO4RSelector
+    include BasicSelector
+    include Concurrent::Concern::Logging
 
-    @read_active = []
-    @read_inactive = []
-    @readers = {}
+    def initialize timeout=0.1
+      @timeout = timeout or raise "Timeout cannot be nil"
+      @selector = NIO::Selector.new
 
-    @write_active = []
-    @write_inactive = []
-    @writers = {}
+      @listeners = Concurrent::Agent.new({}, :error_mode => :continue)
+      @registered = Concurrent::Agent.new({}, :error_mode => :continue)
+      @readers = Concurrent::Agent.new({}, :error_mode => :continue)
+      @writers = Concurrent::Agent.new({}, :error_mode => :continue)
 
-    @actors = {}
-
-    @all = []
-    @registered = {}
-
-    ref << :tick
-  end
-
-  def on_message message
-    case message
-    when :tick #, :reset!, :restart!
-      tick
-
-    when IOActors::AddMessage
-      add message.io, message.actor
-
-    when IOActors::RemoveMessage
-      remove message.io
-
-    when IOActors::CloseMessage
-      close message.io
-
-    when IOActors::WriteMessage
-      write message.io, message.bytes
-
-    when IOActors::EnableReadMessage
-      enable_read message.io
-
-    when IOActors::EnableWriteMessage
-      enable_write message.io
-
-    when :stop
-      terminate!
-
-    end
-  end
-
-  private
-
-  def registered? io, direction=nil
-    return false unless exists = @registered.key?(io)
-
-    case direction
-    when nil
-      exists
-    when :r
-      [:r, :rw].member? @registered[io]
-    when :w
-      [:w, :rw].member? @registered[io]
-    when :rw
-      @registered[io] == :rw
-    end
-  end
-
-  def add io, actor
-    raise "already added" if @all.member?(io)
-
-    @readers[io] = IOActors::Reader.spawn('reader', io, actor)
-    enable_read io
-
-    @writers[io] = IOActors::Writer.spawn('writer', io)
-    disable_write io
-
-    @actors[io] = actor
-    @all.push io
-    true
-  rescue IOError
-    close io
-    false
-  rescue Exception => e
-    log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
-    false
-  end
-
-  def remove io
-    return unless @registered.key?(io)
-
-    # Delete reader and writer
-    if reader = @readers.delete(io)
-      reader << :stop
+      run!
     end
 
-    if writer = @writers.delete(io)
-      writer << :stop
-    end
-
-    # Completely deregister
-    monitor = @selector.deregister(io)
-    @registered.delete(io)
-
-    # Return the actor
-    @actors.delete(io)
-  rescue Exception => e
-    log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
-    false
-  end
-
-  def enable_read io
-    reregister io do |registered|
-      case registered
-      when :w,:rw
-        :rw
-      else
-        :r
-      end
-    end
-  end
-
-  def disable_read io
-    reregister io do |registered|
-      case registered
-      when :rw, :w
-        :w
-      else
-        nil
-      end
-    end
-  end
-
-  def enable_write io
-    reregister io do |registered|
-      case registered
-      when :w, :rw
-        :rw
-      else
-        :w
-      end
-    end
-  end
-
-  def disable_write io
-    reregister io do |registered|
-      case registered
-      when :r, :rw
-        :r
-      else
-        nil
-      end
-    end
-  end
-
-  def reregister io
-    # Deregister if currently registered
-    @selector.deregister io if @registered[io]
-
-    # Reregister if necessary
-    if @registered[io] = yield(@registered[io])
-      @selector.register io, @registered[io]
-    end
-
-    # Wakeup (does this actually work?)
-    @selector.wakeup
-  rescue IOError
-    close io
-  rescue Exception => e
-    log(Logger::ERROR, "#{e.class}: #{e.to_s}\n#{e.backtrace}")
-  end
-
-  def close io
-    if actor = remove(io) and envelope.sender != actor
-      actor << :closed
-    end
-  rescue Exception => e
-    log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
-  ensure
-    io.close rescue nil
-  end
-
-  def tick
-    ready = @selector.select(@timeout)
-    (ready || []).each do |m|
-      io = m.io
-      begin
-        if io.nil?
-          log(Logger::WARN, "nil IO object")
-        elsif io.closed?
-          close io
+    def add io, listener
+      @readers.send do |readers|
+        if readers.key? io
+          readers
         else
-          if [:r, :rw].member? m.readiness
-            @readers[io] << :read if @readers[io]
-            disable_read io
-          end
+          readers.merge(io => Reader.new(self, io, listener))
+        end
+      end
 
-          if [:w, :rw].member? m.readiness
-            @writers[io] << :write if @writers[io]
-            disable_write io
+      @writers.send do |writers|
+        if writers.key? io
+          writers
+        else
+          writers.merge(io => Writer.new(self, io, listener))
+        end
+      end
+
+      @listeners.send do |listeners|
+        if listeners.key? io
+          listeners
+        else
+          listeners.merge(io => listener)
+        end
+      end
+
+      reregister io do |registered|
+        registered || :r
+      end
+    rescue => e
+      log(Logger::ERROR, self.to_s + '#add', e.to_s)
+      trigger_error_and_remove [io], e
+    ensure
+      return nil
+    end
+
+    def remove ios
+      # Eliminate from all agents
+      [@readers, @writers, @listeners, @registered].each do |agent|
+        agent.send do |state|
+          hash_without_keys(state, ios)
+        end
+      end
+
+      # Remove from selector
+      ios.each(&@selector.method(:deregister))
+
+      nil
+    rescue => e
+      log(Logger::ERROR, self.to_s + '#remove', e.to_s)
+      raise e
+    end
+
+    def enable_read io
+      reregister io do |registered|
+        case registered
+        when :w,:rw
+          :rw
+        else
+          :r
+        end
+      end
+    end
+
+    def disable_read io
+      reregister io do |registered|
+        case registered
+        when :rw, :w
+          :w
+        else
+          nil
+        end
+      end
+    end
+
+    def enable_write io
+      reregister io do |registered|
+        case registered
+        when :w, :rw
+          :rw
+        else
+          :w
+        end
+      end
+    end
+
+    def disable_write io
+      reregister io do |registered|
+        case registered
+        when :r, :rw
+          :r
+        else
+          nil
+        end
+      end
+    end
+
+    def reregister io, &block
+      @registered.send do |registered|
+        # Deregister any existing registration
+        @selector.deregister io if registered[io]
+        
+        # Register again, if instructed to
+        if new_value = block.call(registered[io])
+          begin
+            @selector.register io, new_value
+          rescue IOError => e
+            trigger_error_and_remove [io], e
           end
         end
-      rescue IOError, Errno::EBADF, Errno::ECONNRESET
-        close io
+
+        # Store the new value
+        registered.merge(io => new_value)
+      end
+    rescue => e
+      log(Logger::ERROR, self.to_s + "#reregister", e.to_s)
+    end
+
+    def run_loop
+      loop do
+        begin
+          if ready = @selector.select(@timeout)
+            to_error = []
+
+            readers = @readers.deref
+            writers = @writers.deref
+
+            ready.each do |m|
+              io = m.io
+
+              if io.nil?
+                log(Logger::WARN, self.to_s + "#run_loop", "nil IO object")
+              elsif io.closed?
+                to_error.push m
+              else
+                if [:r, :rw].member? m.readiness
+                  disable_read io
+                  if reader = readers[io]
+                    reader.read!
+                  end
+                end
+
+                if [:w, :rw].member? m.readiness
+                  disable_write io
+                  if writer = writers[io]
+                    writer.flush!
+                  end
+                end
+              end
+            end
+
+            # Trigger errors for all errored states and remove from
+            # the selector
+            trigger_error_and_remove to_error
+          end
+        rescue IOError => e
+          # Remove closed fds
+          all = @listeners.deref.keys
+          trigger_error_and_remove all.select(&:closed?), e
+        ensure
+          # Wait for the agents to finish what they are doing before
+          # continuing
+          @readers.await
+          @writers.await
+          @listeners.await
+          @registered.await
+        end
       end
     end
-  rescue Exception => e
-    log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
-  ensure
-    ref << :tick
-    true
-  end
 
-  def write io, bytes
-    if writer = @writers[io]
-      writer << bytes
+    def get_writer io
+      @writers.deref[io]
     end
   end
 end

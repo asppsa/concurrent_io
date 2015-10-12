@@ -1,36 +1,37 @@
-class IOActors::Writer < Concurrent::Actor::Context
+class IOActors::Writer
+  include Concurrent::Concern::Logging
 
-  def initialize io
+  def initialize selector, io, listener
+    @selector = selector
     @io = io
-    @writes = []
+    @listener = listener
+    @writes = Concurrent::Agent.new([], :error_mode => :continue)
   end
 
-  def on_message message
-    case message
-    when IOActors::OutputMessage
-      append message.bytes
-    when String
-      append message
-    when :write #, :reset!, :restart!
-      write
-    when :stop
-      terminate!
+  def append bytes
+    @writes.send do |writes|
+      flush writes.dup.push(bytes)
     end
   end
 
-  private
+  def flush!
+    @writes.send do |writes|
+      flush writes.dup
+    end
+  end
 
-  def append bytes
-    @writes.push bytes
-    write
+  def await
+    @writes.await
   end
 
   ##
   # This method will write whatever it can out of the first item in
-  # the write queue.  If it can't write it all, it puts the rest back
-  def write
+  # the write queue.  It returns an array of items it failed to flush
+  def flush writes
     total = 0
-    while bytes = @writes.shift
+    while bytes = writes.shift
+      next unless bytes.bytesize > 0
+
       num_bytes = begin
                     @io.write_nonblock(bytes)
                   rescue IO::WaitWritable, Errno::EAGAIN
@@ -45,20 +46,23 @@ class IOActors::Writer < Concurrent::Actor::Context
       # If the write could not be completed in one go, or if there are
       # more writes pending ...
       if num_bytes == 0
-        @writes.unshift bytes
-        parent << IOActors::EnableWriteMessage.new(@io)
+        writes.unshift bytes
+        @selector.enable_write @io
         break
       elsif num_bytes < bytes.bytesize
-        @writes.unshift bytes.byteslice(num_bytes..bytes.bytesize)
-        parent << IOActors::EnableWriteMessage.new(@io)
+        writes.unshift bytes.byteslice(num_bytes..bytes.bytesize)
+        @selector.enable_write @io
         break
       end
     end
-  rescue IOError, Errno::EPIPE, Errno::ECONNRESET
-    parent << IOActors::CloseMessage.new(@io)
-  rescue Exception => e
-    log(Logger::ERROR, e.to_s)
+  rescue IOError, Errno::EPIPE, Errno::ECONNRESET => e
+    @selector.remove [@io]
+    @listener.trigger_error e
+  rescue => e
+    log(Logger::ERROR, self.to_s + '#flush', e.to_s)
+    @selector.enable_write @io
   ensure
-    total
+    @listener.trigger_write total
+    return writes
   end
 end
