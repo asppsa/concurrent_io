@@ -1,130 +1,116 @@
 require 'eventmachine'
 
-class IOActors::EventMachineSelector < Concurrent::Actor::Context
+class IOActors::EventMachineSelector
+  include Concurrent::Concern::Logging
+  include IOActors::BasicSelector
 
   def initialize timeout=nil
-    @handlers = {}
+    @handlers = Concurrent::Agent.new({}, :error_mode => :continue)
+
+    @ivar = Concurrent::IVar.new
     run!
+
+    # Force us to wait until EM is running
+    @ivar.value
   end
 
-  def on_message message
-    case message
-    when :run
-      begin
-        EventMachine.stop
-      rescue RuntimeError
-      ensure
-        run!
+  def run_loop
+    EventMachine.run do
+      EventMachine.error_handler do |e|
+        log(Logger::ERROR, self.to_s + '#run_loop', e.to_s)
       end
 
-    when IOActors::AddMessage
-      add message.io, message.actor
-
-    when IOActors::RemoveMessage
-      remove message.io
-
-    when IOActors::WriteMessage
-      write message.io, message.bytes
-
-    when IOActors::CloseMessage
-      close message.io
-
-    when :stop
-      begin
-        EventMachine.stop
-      rescue RuntimeError
-      ensure
-        terminate!
-      end
+      @ivar.set true
     end
-  rescue Exception => e
-    log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
   end
 
-  private
-
-  def run!
-    ivar = Concurrent::IVar.new
-    
-    @p = Concurrent::Promise.fulfill([ref,ivar]).then do |ref,ivar|
-      begin
-        EventMachine.run do
-          #Signal.trap("INT")  { EventMachine.stop }
-          #Signal.trap("TERM") { EventMachine.stop }
-          ivar.set true
-        end
-      rescue Exception => e
-        puts "#{e.to_s}\n#{e.backtrace}"
-        ref << :run
+  def add io, listener
+    @handlers.send do |handlers|
+      if handlers.key? io
+        handlers
+      else
+        handlers.merge(io => Handler.create_async(self, io, listener))
       end
     end
 
-    # Freeze until we're running
-    ivar.value
-  end
-
-  def add io, actor
-    @handlers[io] = Handler.create_async(io, actor)
     nil
   end
 
-  def remove io
-    return unless handler = @handlers.delete(io)
-    handler.value.remove_async
+  def remove ios
+    @handlers.send do |handlers|
+      ios.each do |io|
+        if handler = handlers[io]
+          handler.value.remove_async unless handler.value.unbound
+        end
+      end
+
+      hash_without_keys(handlers, ios)
+    end
+
     nil
   end
 
   def write io, bytes
-    return unless handler = @handlers[io]
+    raise "Failed to acquire handler for #{io}" unless handler = @handlers.deref[io]
     handler.value.write_async bytes
     nil
   end
 
-  def close io
-    return unless handler = @handlers.delete(io)
-    handler.value.close_async
-    nil
+  def length
+    @handlers.deref.length
   end
-
+  
   class Handler < EventMachine::Connection
-    attr_accessor :actor
+    include Concurrent::Concern::Logging
+
+    attr_accessor :listener, :selector, :io, :unbound
 
     def receive_data data
-      @actor << IOActors::InputMessage.new(data)
+      listener.trigger_read(data)
     end
 
     def unbind
-      actor << :closed if actor
+      @unbound = true
+      unless @intentional_remove
+        listener.trigger_error IOError
+        selector.remove [io]
+      end
     end
 
     def write_async data
       EventMachine.next_tick{ send_data data }
     end
 
-    def close_async
-      EventMachine.next_tick{ close_connection }
-    end
-
     def remove_async
-      EventMachine.next_tick{ detach }
+      EventMachine.next_tick do
+        @intentional_remove = true
+        close_connection
+      end
     end
 
-    def self.create_async io, actor
-      ivar = Concurrent::IVar.new
+    class << self
+      include Concurrent::Concern::Logging
 
-      EventMachine.next_tick do
-        begin
-          handler = EventMachine.attach(io, self) do |c|
-            c.actor = actor
+      def create_async selector, io, listener
+        ivar = Concurrent::IVar.new
+
+        EventMachine.next_tick do
+          begin
+            handler = EventMachine.attach(io, self) do |c|
+              c.io = io
+              c.selector = selector
+              c.listener = listener
+              c.unbound = false
+            end
+            ivar.set handler
+          rescue => e
+            log(Logger::ERROR, self.to_s + '.create_async', e.to_s)
+            raise e
           end
-          ivar.set handler
-        rescue Exception => e
-          p e
-          raise e
         end
-      end
 
-      ivar
+        ivar
+      end
     end
   end
 end

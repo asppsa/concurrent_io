@@ -43,10 +43,10 @@ module IOActors
     end
 
     def use_nio4r!
-      replace_default_selector!{ new_nio4r_selector(@default_selector_name) }
+      replace_default_selector!{ new_nio4r_selector }
     end
 
-    def new_nio4r_selector name
+    def new_nio4r_selector
       require_relative 'io_actors/selector/nio4r'
       NIO4RSelector.new
     end
@@ -60,12 +60,12 @@ module IOActors
     end
 
     def use_eventmachine!
-      replace_default_selector!{ new_eventmachine_selector(@default_selector_name) }
+      replace_default_selector!{ new_eventmachine_selector }
     end
 
-    def new_eventmachine_selector name
+    def new_eventmachine_selector
       require_relative 'io_actors/selector/eventmachine'
-      EventMachineSelector.new(name)
+      EventMachineSelector.new
     end
 
     private
