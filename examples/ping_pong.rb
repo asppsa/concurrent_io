@@ -135,8 +135,28 @@ ALIVE AGENTS: #{stats[:alive]}
 IO: #{io_count}
 IO open: #{io_open}
 IO closed: #{io_closed}
-
 }
+
+
+    registered_length = IOActors.default_selector.instance_exec do
+      @registered.deref.length
+    end
+
+    readers_length = IOActors.default_selector.instance_exec do
+      @readers.deref.length
+    end
+
+    writers_length = IOActors.default_selector.instance_exec do
+      @writers.deref.length
+    end
+
+    puts %{
+DEFAULT SELECTOR LENGTH: #{IOActors.default_selector.length}
+REGISTERED LENGTH: #{registered_length}
+READERS LENGTH: #{readers_length}
+WRITERS LENGTH: #{writers_length}
+}
+
   rescue => e
     puts e.to_s
   ensure
