@@ -66,6 +66,11 @@ module IOActors
       # Remove from selector
       ios.each(&@selector.method(:deregister))
 
+      # Close the IO objects
+      ios.each do |io|
+        io.close rescue nil
+      end
+
       nil
     rescue => e
       log(Logger::ERROR, self.to_s + '#remove', e.to_s)

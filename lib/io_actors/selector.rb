@@ -80,11 +80,18 @@ module IOActors
     end
 
     def remove ios
+      # Remove from state vars
       remove_from_state @readers, ios
       remove_from_state @writers, ios
 
+      # Remove from listener list
       @listeners.send do |listeners|
         hash_without_keys(listeners, ios)
+      end
+
+      # Close the IO object
+      ios.each do |io|
+        io.close rescue nil
       end
 
       nil

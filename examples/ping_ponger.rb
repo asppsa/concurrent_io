@@ -23,7 +23,6 @@ class PingPonger
 
     on_error do |e|
       #log(Logger::ERROR, @label, e.to_s)
-      self.close
     end
 
     on_write do |count|
@@ -39,11 +38,6 @@ class PingPonger
 
   def die!
     @selector.remove [@io]
-    close
-  end
-
-  def close
-    @io.close rescue nil
   end
 
   def dispatch_received received
