@@ -46,5 +46,9 @@ module IOActors
 
       nil
     end
+
+    def length
+      @listeners.deref.length
+    end
   end
 end

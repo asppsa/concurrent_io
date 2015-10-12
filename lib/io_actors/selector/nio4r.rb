@@ -35,6 +35,7 @@ module IOActors
         end
       end
 
+      # Used for error reporting
       @listeners.send do |listeners|
         if listeners.key? io
           listeners
@@ -43,7 +44,8 @@ module IOActors
         end
       end
 
-      reregister io do |registered|
+      # Add to selector
+      reregister [io] do |registered|
         registered || :r
       end
     rescue => e
@@ -70,66 +72,95 @@ module IOActors
       raise e
     end
 
-    def enable_read io
-      reregister io do |registered|
-        case registered
-        when :w,:rw
-          :rw
-        else
-          :r
-        end
+    def readable registered
+      case registered
+      when :w,:rw
+        :rw
+      else
+        :r
       end
+    end
+
+    def unreadable registered
+      case registered
+      when :rw, :w
+        :w
+      else
+        nil
+      end
+    end
+
+    def writable registered
+      case registered
+      when :w, :rw
+        :rw
+      else
+        :w
+      end
+    end
+
+    def unwritable registered
+      case registered
+      when :r, :rw
+        :r
+      else
+        nil
+      end
+    end
+    
+    def enable_read io
+      reregister [io], &method(:readable)
     end
 
     def disable_read io
-      reregister io do |registered|
-        case registered
-        when :rw, :w
-          :w
-        else
-          nil
-        end
-      end
+      reregister [io], &method(:unreadable)
     end
 
     def enable_write io
-      reregister io do |registered|
-        case registered
-        when :w, :rw
-          :rw
-        else
-          :w
-        end
-      end
+      reregister [io], &method(:writable)
     end
 
     def disable_write io
-      reregister io do |registered|
-        case registered
-        when :r, :rw
-          :r
-        else
-          nil
-        end
-      end
+      reregister [io], &method(:unwritable)
     end
 
-    def reregister io, &block
-      @registered.send do |registered|
-        # Deregister any existing registration
-        @selector.deregister io if registered[io]
-        
-        # Register again, if instructed to
-        if new_value = block.call(registered[io])
-          begin
-            @selector.register io, new_value
-          rescue IOError => e
-            trigger_error_and_remove [io], e
-          end
-        end
+    def reregister ios, &block
+      return if ios.empty?
 
-        # Store the new value
-        registered.merge(io => new_value)
+      @registered.send do |registered|
+        registered.dup.tap do |r|
+          to_error = {}
+
+          ios.each do |io|
+            # Get the new value
+            new_value = block.call(r[io])
+
+            # Deregister any existing registration if the value has
+            # changed
+            @selector.deregister io if r[io] && new_value != r[io]
+
+            # Register again, if there is a new value
+            if new_value
+              begin
+                @selector.register io, new_value
+              rescue IOError => e
+                to_error[e] ||= []
+                to_error[e].push io
+              end
+            end
+
+            # Store the value
+            r[io] = new_value
+          end
+
+          # Trigger errors for failed registrations
+          to_error.each do |e, ios|
+            trigger_error_and_remove ios, e
+          end
+
+          # Wake the selector up
+          @selector.wakeup
+        end
       end
     rescue => e
       log(Logger::ERROR, self.to_s + "#reregister", e.to_s)
@@ -140,6 +171,8 @@ module IOActors
         begin
           if ready = @selector.select(@timeout)
             to_error = []
+            to_read = []
+            to_write = []
 
             readers = @readers.deref
             writers = @writers.deref
@@ -150,23 +183,25 @@ module IOActors
               if io.nil?
                 log(Logger::WARN, self.to_s + "#run_loop", "nil IO object")
               elsif io.closed?
-                to_error.push m
+                to_error.push io
               else
                 if [:r, :rw].member? m.readiness
-                  disable_read io
-                  if reader = readers[io]
-                    reader.read!
-                  end
+                  to_read.push io
                 end
 
                 if [:w, :rw].member? m.readiness
-                  disable_write io
-                  if writer = writers[io]
-                    writer.flush!
-                  end
+                  to_write.push io
                 end
               end
             end
+
+            # Remove items from the selector
+            reregister to_read, &method(:unreadable)
+            reregister to_write, &method(:unwritable)
+
+            # Tell readers and writers to go to work
+            to_read.map{ |io| readers[io] }.compact.each(&:read!)
+            to_write.map{ |io| readers[io] }.compact.each(&:flush!)
 
             # Trigger errors for all errored states and remove from
             # the selector
