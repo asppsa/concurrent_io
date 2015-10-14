@@ -70,20 +70,20 @@ module IOActors
 
     private
 
-    def try_nio4r name
-      new_nio4r name
+    def try_nio4r
+      new_nio4r
     rescue
       nil
     end
 
-    def try_ffi_libevent name
-      new_ffi_libevent_selector name
+    def try_ffi_libevent
+      new_ffi_libevent_selector
     rescue
       nil
     end
 
-    def try_eventmachine name
-      new_eventmachine_selector name
+    def try_eventmachine
+      new_eventmachine_selector
     rescue
       nil
     end

@@ -10,10 +10,10 @@ module IOActors
       @timeout = timeout or raise "Timeout cannot be nil"
       @selector = NIO::Selector.new
 
-      @listeners = Concurrent::Agent.new({}, :error_mode => :continue)
-      @registered = Concurrent::Agent.new({}, :error_mode => :continue)
-      @readers = Concurrent::Agent.new({}, :error_mode => :continue)
-      @writers = Concurrent::Agent.new({}, :error_mode => :continue)
+      @listeners = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
+      @registered = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
+      @readers = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
+      @writers = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
 
       run!
     end
@@ -219,16 +219,20 @@ module IOActors
         ensure
           # Wait for the agents to finish what they are doing before
           # continuing
-          @readers.await
-          @writers.await
-          @listeners.await
-          @registered.await
+          await
         end
       end
     end
 
     def get_writer io
       @writers.deref[io]
+    end
+
+    def await
+      @readers.await
+      @writers.await
+      @listeners.await
+      @registered.await
     end
   end
 end

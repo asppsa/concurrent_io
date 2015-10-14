@@ -4,8 +4,7 @@ source 'https://rubygems.org'
 gemspec
 
 # An important bugfix
-gem 'concurrent-ruby', '1.0.0.pre4', :github => 'ruby-concurrency/concurrent-ruby'
-#gem 'concurrent-ruby-edge'
+gem 'concurrent-ruby', :github => 'ruby-concurrency/concurrent-ruby'
 
 # Currently only available from github
 gem "ffi-libevent", :github => 'asppsa/ffi-libevent'

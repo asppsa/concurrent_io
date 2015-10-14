@@ -5,7 +5,7 @@ class IOActors::Writer
     @selector = selector
     @io = io
     @listener = listener
-    @writes = Concurrent::Agent.new([], :error_mode => :continue)
+    @writes = Concurrent::Agent.new([], error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
   end
 
   def append bytes

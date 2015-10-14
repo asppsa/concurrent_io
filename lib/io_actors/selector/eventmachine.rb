@@ -5,7 +5,7 @@ class IOActors::EventMachineSelector
   include IOActors::BasicSelector
 
   def initialize timeout=nil
-    @handlers = Concurrent::Agent.new({}, :error_mode => :continue)
+    @handlers = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
 
     @ivar = Concurrent::IVar.new
     run!
@@ -58,6 +58,10 @@ class IOActors::EventMachineSelector
 
   def length
     @handlers.deref.length
+  end
+
+  def await
+    @handlers.await
   end
   
   class Handler < EventMachine::Connection

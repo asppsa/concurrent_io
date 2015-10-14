@@ -10,7 +10,7 @@ module IOActors
     class << self
       def agent
         state = self.new
-        Concurrent::Agent.new(state, :error_mode => :continue)
+        Concurrent::Agent.new(state, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
       end
     end
   end
@@ -24,7 +24,7 @@ module IOActors
 
       @readers = SelectorState.agent
       @writers = SelectorState.agent
-      @listeners = Concurrent::Agent.new({}, :error_mode => :continue)
+      @listeners = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
 
       run!
     end
@@ -137,9 +137,7 @@ module IOActors
         ensure
           # Wait for the agents to finish what they are doing before
           # continuing
-          @readers.await
-          @writers.await
-          @listeners.await
+          await
         end
       end
     end
@@ -192,6 +190,12 @@ module IOActors
 
     def get_writer io
       @writers.deref.receivers[io]
+    end
+
+    def await
+      @readers.await
+      @writers.await
+      @listeners.await
     end
   end
 end
