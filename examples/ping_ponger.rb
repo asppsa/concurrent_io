@@ -13,7 +13,7 @@ class PingPonger
     @label = "#{type}-#{generation}-#{number}"
 
     @selector = IOActors.default_selector
-    @received = Concurrent::Agent.new([], :error_mode => :continue)
+    @received = Concurrent::Agent.new([], error_handler: proc{ |e| log(Logger::ERROR, @label, e.to_s) })
 
     on_read do |bytes|
       @received.send do |received|
@@ -22,7 +22,7 @@ class PingPonger
     end
 
     on_error do |e|
-      #log(Logger::ERROR, @label, e.to_s)
+      log(Logger::ERROR, @label, e.to_s)
     end
 
     on_write do |count|

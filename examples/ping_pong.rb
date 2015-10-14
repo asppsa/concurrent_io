@@ -139,15 +139,15 @@ IO closed: #{io_closed}
 
 
     registered_length = IOActors.default_selector.instance_exec do
-      @registered.deref.length
+      #@registered.deref.length
     end
 
     readers_length = IOActors.default_selector.instance_exec do
-      @readers.deref.length
+      #@readers.deref.length
     end
 
     writers_length = IOActors.default_selector.instance_exec do
-      @writers.deref.length
+      #@writers.deref.length
     end
 
     puts %{
