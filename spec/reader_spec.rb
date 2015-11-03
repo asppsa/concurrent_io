@@ -1,40 +1,37 @@
 describe IOActors::Reader do
 
   let(:sockets){ UNIXSocket.pair }
-  let(:listener) { [] }
+  let(:listener) { spy("listener") }
+  let(:selector) { spy("selector") }
 
-  subject{ described_class.spawn('my_reader', sockets[0], listener) }
-  after(:each) { subject.ask!(:stop) rescue nil }
+  subject{ described_class.new(selector, sockets[0], listener) }
 
   it "can read bytes" do
+    expect(listener).to receive(:trigger_read).with("test")
+
     sockets[1].send("test", 0)
-    subject << :read
-
+    subject.read!
     sleep 1
-
-    expect(listener.length).to be > 0
-    expect(listener).to all( be_a(IOActors::InputMessage) )
-    expect(listener.map(&:bytes).join).to eq("test")
   end
 
   it "can read a large number of bytes" do
     bytes = SecureRandom.random_bytes(1_000_000)
     hash = Digest::SHA1.hexdigest bytes
 
-    writer = IOActors::Writer.spawn('my_writer', sockets[1])
-    writer << IOActors::OutputMessage.new(bytes)
-      
     input = ""
+    expect(listener).to receive(:trigger_read) do |bytes|
+      input << bytes
+      if input.bytesize == 1_000_000
+        expect(Digest::SHA1.hexdigest input).to eq hash
+      end
+    end.at_most(1_000_000).times
+    
+    writer = IOActors::Writer.new(selector, sockets[1], listener)
+    writer.append bytes
+
     while input.bytesize < 1_000_000
-      writer << :write
-      subject << :read
-      sleep 0.1
-      input = listener.map{ |i| i.bytes }.join
+      writer.flush!
     end
-
-    writer << :close
-
-    expect(Digest::SHA1.hexdigest input).to eq(hash)
   end
 
   it "terminates on :stop" do

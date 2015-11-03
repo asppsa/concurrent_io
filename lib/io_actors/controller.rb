@@ -1,56 +1,85 @@
-class IOActors::Controller < Concurrent::Actor::Context
+require 'concurrent/actor'
 
-  def initialize io, selector=nil
-    @io = io
-    @selector = selector || IOActors.default_selector
-    @selector << IOActors::AddMessage.new(@io, ref)
+module IOActors
 
-    @listener = if parent != Concurrent::Actor.root
-                  parent
-                end
-  end
+  InformMessage = Concurrent::ImmutableStruct.new(:recipient)
+  OutputMessage = Concurrent::ImmutableStruct.new(:bytes)
 
-  def on_message message
-    case message
-    when IOActors::InformMessage
-      @listener = message.listener
+  ReadMessage = Concurrent::ImmutableStruct.new(:bytes)
+  WriteMessage = Concurrent::ImmutableStruct.new(:count)
+  ErrorMessage = Concurrent::ImmutableStruct.new(:error)
 
-    when IOActors::OutputMessage
-      @selector << IOActors::WriteMessage.new(@io, message.bytes)
+  class Controller < Concurrent::Actor::Context
+    def initialize io, selector=nil
+      @io = io
+      @selector = selector || IOActors.default_selector
+      @selector.add! @io, Translator.new(self.ref)
 
-    when String
-      @selector << IOActors::WriteMessage.new(@io, message)
-
-    when :close
-      close!
-
-    when :closed
-      closed!
-
-    when :listener
-      @listener
-
-    when IOActors::InputMessage
-      redirect @listener if @listener
-
+      @recipient = if parent != Concurrent::Actor.root
+                     parent
+                   end
     end
-  rescue Exception => e
-    log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
-  end
 
-  private
+    def on_message message
+      case message
+      when IOActors::InformMessage
+        @recipient = message.recipient
 
-  def close!
-    @selector << IOActors::CloseMessage.new(@io)
-  rescue Exception => e
-    log(Logger::ERROR, e.to_s)
-  ensure
-    closed!
-  end
+      when IOActors::OutputMessage
+        @selector.write(@io, message.bytes)
 
-  def closed!
-    @listener << :closed if @listener
-  ensure
-    terminate!
+      when String
+        @selector.write(@io, message)
+
+      when :close
+        close!
+
+      when :recipient
+        @recipient
+
+      when IOActors::ReadMessage, IOActors::WriteMessage
+        redirect @recipient if @recipient
+
+      when IOActors::ErrorMessage
+        closed! message
+
+      end
+    rescue Exception => e
+      log(Logger::ERROR, "#{e.to_s}\n#{e.backtrace}")
+    end
+
+    private
+
+    def close!
+      @selector.remove [@io]
+    rescue Exception => e
+      log(Logger::ERROR, e.to_s)
+    ensure
+      closed!
+    end
+
+    def closed! message = :closed
+      @recipient << message if @recipient
+    ensure
+      terminate!
+    end
+
+    class Translator
+      include IOActors::Listener
+
+      def initialize ref
+        on_read do |bytes|
+          ref << ReadMessage.new(bytes)
+        end
+
+        on_write do |count|
+          ref << WriteMessage.new(count)
+        end
+
+        on_error do |e|
+          ref << ErrorMessage.new(e)
+        end
+      end
+    end
   end
 end

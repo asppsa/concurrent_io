@@ -6,9 +6,13 @@ class IOActors::EventMachineSelector
 
   def initialize timeout=nil
     @handlers = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
-
-    @ivar = Concurrent::IVar.new
     run!
+  end
+
+  def run!
+    @ivar = Concurrent::IVar.new
+
+    super
 
     # Force us to wait until EM is running
     @ivar.value
@@ -24,6 +28,13 @@ class IOActors::EventMachineSelector
     end
   end
 
+  def stop!
+    @stopped.try_set do
+      EventMachine.stop_event_loop
+      true
+    end
+  end
+
   def add io, listener
     @handlers.send do |handlers|
       if handlers.key? io
@@ -33,6 +44,12 @@ class IOActors::EventMachineSelector
       end
     end
 
+    nil
+  end
+
+  def add! io, listener
+    add io, listener
+    @handlers.await
     nil
   end
 
@@ -58,10 +75,6 @@ class IOActors::EventMachineSelector
 
   def length
     @handlers.deref.length
-  end
-
-  def await
-    @handlers.await
   end
   
   class Handler < EventMachine::Connection

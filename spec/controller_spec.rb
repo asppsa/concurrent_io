@@ -1,4 +1,5 @@
 require 'socket'
+require 'io_actors/controller'
 
 describe IOActors::Controller do
   let(:sockets){ UNIXSocket.pair }
@@ -8,7 +9,7 @@ describe IOActors::Controller do
 
     after(:each) do
       subject.ask!(:close) rescue nil
-      selector.ask! :stop rescue nil
+      selector.stop!
     end
 
     it "can read bytes" do
@@ -16,7 +17,7 @@ describe IOActors::Controller do
       c = Class.new(Concurrent::Actor::Context) do
         def on_message message
           case message
-          when IOActors::InputMessage
+          when IOActors::ReadMessage
             @read = message.bytes == 'test'
           when :read
             @read
@@ -46,12 +47,6 @@ describe IOActors::Controller do
       expect(sockets[0].closed?).to be_truthy
     end
 
-    it "terminates if its select actor receives a close message" do
-      selector.ask! IOActors::CloseMessage.new(sockets[0])
-      sleep 0.2
-      expect(subject.ask! :terminated?).to be_truthy
-    end
-
     it "terminates when the socket is closed at the other end" do
       sockets[1].close
       sleep 0.5
@@ -60,7 +55,7 @@ describe IOActors::Controller do
   end
 
   context "using basic selector" do
-    let(:selector) { IOActors::Selector.spawn('my_selector') }
+    let(:selector) { IOActors::Selector.new }
     include_examples :controller
   end
 
@@ -69,7 +64,7 @@ describe IOActors::Controller do
       require 'io_actors/selector/ffi_libevent'
     end
 
-    let(:selector) { IOActors::FFILibeventSelector.spawn('my_selector') }
+    let(:selector) { IOActors::FFILibeventSelector.new }
     include_examples :controller
   end
 
@@ -78,7 +73,7 @@ describe IOActors::Controller do
       require 'io_actors/selector/nio4r'
     end
 
-    let(:selector) { IOActors::NIO4RSelector.spawn('my_selector') }
+    let(:selector) { IOActors::NIO4RSelector.new }
     include_examples :controller
   end
 
@@ -87,7 +82,7 @@ describe IOActors::Controller do
       require 'io_actors/selector/eventmachine'
     end
 
-    let(:selector) { IOActors::EventMachineSelector.spawn('my_selector') }
+    let(:selector) { IOActors::EventMachineSelector.new }
     include_examples :controller
   end
 end

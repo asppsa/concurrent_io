@@ -55,6 +55,12 @@ module IOActors
       return nil
     end
 
+    def add! io, listener
+      add io, listener
+      await
+      nil
+    end
+
     def remove ios
       # Eliminate from all agents
       [@readers, @writers, @listeners, @registered].each do |agent|
@@ -220,6 +226,9 @@ module IOActors
           # Wait for the agents to finish what they are doing before
           # continuing
           await
+
+          # Stop if we've been stopped
+          break if @stopped.fulfilled?
         end
       end
     end

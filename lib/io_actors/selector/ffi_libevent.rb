@@ -50,7 +50,13 @@ class IOActors::FFILibeventSelector
     result = @base.loop!(:no_exit_on_empty)
     log(Logger::INFO, self.to_s + '#run_loop', "Loop done: #{result}")
 
-    run! unless result == 0
+    if result == 0
+      @stopped.try_set true
+    end
+  end
+
+  def stop!
+    @base.loopbreak! rescue nil
   end
 
   def add io, listener
@@ -79,6 +85,12 @@ class IOActors::FFILibeventSelector
     end
   rescue => e
     log(Logger::ERROR, self.to_s + '#add', e.to_s)
+  end
+
+  def add! io, listener
+    add io, listener
+    @events.await
+    nil
   end
 
   def remove ios

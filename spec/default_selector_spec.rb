@@ -23,8 +23,11 @@ describe IOActors do
         IOActors.reset_default_selector!
       end
 
-      it "returns an actor" do
-        expect(IOActors.default_selector).to be_a Concurrent::Actor::Reference
+      it "returns a selector" do
+        expect(IOActors.default_selector).to respond_to :add
+        expect(IOActors.default_selector).to respond_to :add!
+        expect(IOActors.default_selector).to respond_to :remove
+        expect(IOActors.default_selector).to respond_to :write
       end
     end
 
@@ -44,7 +47,7 @@ describe IOActors do
       include_examples :returns
 
       it "returns a Selector" do
-        expect(IOActors.default_selector.actor_class).to be IOActors::Selector
+        expect(IOActors.default_selector).to be_a IOActors::Selector
       end
     end
 
@@ -60,7 +63,7 @@ describe IOActors do
       include_examples :returns
 
       it "returns a FFILibeventSelector" do
-        expect(IOActors.default_selector.actor_class).to be IOActors::FFILibeventSelector
+        expect(IOActors.default_selector).to be_a IOActors::FFILibeventSelector
       end
     end
 
@@ -75,7 +78,7 @@ describe IOActors do
       include_examples :returns
 
       it "returns a NIO4RSelector" do
-        expect(IOActors.default_selector.actor_class).to be IOActors::NIO4RSelector
+        expect(IOActors.default_selector).to be_a IOActors::NIO4RSelector
       end
     end
 
@@ -90,7 +93,7 @@ describe IOActors do
       include_examples :returns
 
       it "returns a EventMachineSelector" do
-        expect(IOActors.default_selector.actor_class).to be IOActors::EventMachineSelector
+        expect(IOActors.default_selector).to be_a IOActors::EventMachineSelector
       end
     end
   end

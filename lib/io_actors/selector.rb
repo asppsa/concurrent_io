@@ -79,6 +79,12 @@ module IOActors
       return nil
     end
 
+    def add! io, listener
+      add io, listener
+      await
+      nil
+    end
+
     def remove ios
       # Remove from state vars
       remove_from_state @readers, ios
@@ -138,6 +144,9 @@ module IOActors
           # Wait for the agents to finish what they are doing before
           # continuing
           await
+
+          # Stop looping if we've been stopped
+          break if @stopped.fulfilled?
         end
       end
     end
@@ -146,7 +155,7 @@ module IOActors
     # Take a list of IO objects to make inactive
     def set_inactive state, ios
       return if ios.empty?
-      
+
       state.send do |state|
         # Update state with new object
         SelectorState.new(state.active - ios,

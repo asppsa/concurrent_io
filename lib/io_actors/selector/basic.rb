@@ -1,10 +1,16 @@
 module IOActors
   module BasicSelector
     def run!
+      @stopped = Concurrent::IVar.new
+
       Concurrent::Promise.
         execute(&method(:run_loop)).
         catch{ |e| log(Logger::ERROR, self.to_s + '#run!', e.to_s) }.
-        then(&method(:run!))
+        then{ run! unless @stopped.fulfilled? }
+    end
+
+    def stop!
+      @stopped.try_set true
     end
 
     def trigger_error_and_remove ios, e=IOError
