@@ -1,67 +1,90 @@
 describe 'selectors' do
 
   shared_examples :selector do
+    subject{ described_class.new }
+
     let(:sockets){ UNIXSocket.pair }
-    subject!{ described_class.spawn('my_selector') }
 
-    let(:listener){ Array.new }
-    before{ subject << IOActors::AddMessage.new(sockets[0], listener) }
+    let(:listener_class) do
+      Class.new do
+        attr_reader :read, :error
 
-    after(:each){ subject.ask! :stop rescue nil }
+        def initialize
+          @read = []
+          @error = nil
+        end
 
-    it "passes InputMessage objects to listeners" do
+        def trigger_read s
+          @read << s
+        end
+
+        # Do nothing
+        def trigger_write c; end
+
+        def trigger_error e
+          @error = e
+        end
+
+        def all_read
+          @read.join
+        end
+      end
+    end
+
+    let(:listener){ listener_class.new }
+    before{ subject.add! sockets[0], listener }
+
+    after(:example){ subject.stop! rescue nil }
+
+    it "passes strings to listeners' trigger_read methods" do
       sockets[1].send("test", 0)
 
       # Wait a while
       start = Time.now
       sleep 0.2 while Time.now - start < 10 and
-        listener.length < 1
+        listener.read.length < 1
 
-      expect(listener.length).to eq 1
-      expect(listener.first).to be_a IOActors::InputMessage
-      expect(listener.first.bytes).to eq 'test'
+      expect(listener.read.length).to be >= 1
+      expect(listener.read).to all( be_a String )
+      expect(listener.all_read).to eq 'test'
     end
 
-    it "doesn't pass any InputMessages unless there is something there" do
+    it "doesn't trigger a read unless something is read" do
       # Check that we're not immediately inundated with :read messages
       sleep 0.2
-      expect(listener.length).to eq 0
+      expect(listener.read.length).to eq 0
 
       # Now do the write and then clear after we expect it to have
       # been added
       sockets[1].send("test", 0)
       sleep 0.2
-      listener.clear
+      listener.read.clear
 
       # Check again that no more read messages are written subsequently
       sleep 0.2
-      expect(listener.length).to eq 0
+      expect(listener.read.length).to eq 0
     end
 
-    it "doesn't pass :read once a listener is removed" do
+    it "closes the IO when then listener is removed" do
       # Do a write and read with a lag in-between
       sockets[1].send("test", 0)
       sleep 0.2
-      expect(listener.length).to be > 0
-      listener.clear
+      expect(listener.read.length).to be > 0
+      listener.read.clear
 
-      subject << IOActors::RemoveMessage.new(sockets[0])
-      sleep 0.2
+      subject.remove! [sockets[0]]
 
-      # Now send another message and make sure that nothing happens as a
-      # result
-      sockets[1].send("test", 0)
-      sleep 0.2
-      expect(listener.length).to eq 0
+      # Ensure that the IO has been closed at OS-level (possibly not
+      # at ruby level)
+      expect(sockets[0].closed?).to be true
     end
 
-    it "passes :closed if a socket gets closed" do
+    it "triggers an error if a socket gets closed" do
       # Close the socket and check to see that no :closed message
       # appears
       sockets[1].close
       sleep 0.5
-      expect(listener.length).to eq 1
-      expect(listener.first).to eq :closed
+      expect(listener.error).not_to be_nil
     end
 
     it "can process a large number of bytes" do
@@ -70,46 +93,45 @@ describe 'selectors' do
       hash = Digest::SHA1.hexdigest bytes
 
       # Tell the selector to listen on this one too.
-      listener2 = []
-      subject << IOActors::AddMessage.new(sockets[1], listener2)
+      listener2 = listener_class.new
+      subject.add! sockets[1], listener2
 
       # Write to socket[1]
-      subject << IOActors::WriteMessage.new(sockets[1], bytes)
+      subject.write sockets[1], bytes
 
       # Wait a while
       start = Time.now
       sleep 0.5 while Time.now - start < 10 and
-        listener.
-        map(&:bytes).
+        listener.read.
         map(&:bytesize).
         inject(0, :+) < 1_000_000
 
       # Expect that we've received the bytes
-      expect(listener.length).to be > 0
-      received = listener.map(&:bytes).join
+      expect(listener.read.length).to be > 0
+      received = listener.all_read
       expect(Digest::SHA1.hexdigest(received)).to eq hash
 
       # Remove socket[1]
-      subject.ask! IOActors::RemoveMessage.new(sockets[1])
+      subject.remove! [sockets[1]]
     end
   end
 
-  describe IOActors::Selector do
+  describe ConcurrentIO::Selector do
     include_examples :selector
   end
 
-  require 'io_actors/selector/ffi_libevent'
-  describe IOActors::FFILibeventSelector do
+  require 'concurrent_io/selector/ffi_libevent'
+  describe ConcurrentIO::FFILibeventSelector do
     include_examples :selector
   end
 
-  require 'io_actors/selector/nio4r'
-  describe IOActors::NIO4RSelector do
+  require 'concurrent_io/selector/nio4r'
+  describe ConcurrentIO::NIO4RSelector do
     include_examples :selector
   end
 
-  require 'io_actors/selector/eventmachine'
-  describe IOActors::EventMachineSelector do
+  require 'concurrent_io/selector/eventmachine'
+  describe ConcurrentIO::EventMachineSelector do
     include_examples :selector
   end
 end

@@ -1,6 +1,6 @@
 require 'nio'
 
-module IOActors 
+module ConcurrentIO
 
   class NIO4RSelector
     include BasicSelector
@@ -10,10 +10,10 @@ module IOActors
       @timeout = timeout or raise "Timeout cannot be nil"
       @selector = NIO::Selector.new
 
-      @listeners = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
-      @registered = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
-      @readers = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
-      @writers = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
+      @listeners = Concurrent::Agent.new({}, error_handler: proc{ |a,e| log(Logger::ERROR, self.to_s, e.to_s) })
+      @registered = Concurrent::Agent.new({}, error_handler: proc{ |a,e| log(Logger::ERROR, self.to_s, e.to_s) })
+      @readers = Concurrent::Agent.new({}, error_handler: proc{ |a,e| log(Logger::ERROR, self.to_s, e.to_s) })
+      @writers = Concurrent::Agent.new({}, error_handler: proc{ |a,e| log(Logger::ERROR, self.to_s, e.to_s) })
 
       run!
     end
@@ -53,12 +53,6 @@ module IOActors
       trigger_error_and_remove [io], e
     ensure
       return nil
-    end
-
-    def add! io, listener
-      add io, listener
-      await
-      nil
     end
 
     def remove ios
@@ -212,7 +206,7 @@ module IOActors
 
             # Tell readers and writers to go to work
             to_read.map{ |io| readers[io] }.compact.each(&:read!)
-            to_write.map{ |io| readers[io] }.compact.each(&:flush!)
+            to_write.map{ |io| writers[io] }.compact.each(&:flush!)
 
             # Trigger errors for all errored states and remove from
             # the selector

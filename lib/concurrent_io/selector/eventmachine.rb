@@ -1,11 +1,11 @@
 require 'eventmachine'
 
-class IOActors::EventMachineSelector
+class ConcurrentIO::EventMachineSelector
   include Concurrent::Concern::Logging
-  include IOActors::BasicSelector
+  include ConcurrentIO::BasicSelector
 
   def initialize timeout=nil
-    @handlers = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
+    @handlers = Concurrent::Agent.new({}, error_handler: proc{ |a,e| log(Logger::ERROR, self.to_s, e.to_s) })
     run!
   end
 
@@ -47,10 +47,8 @@ class IOActors::EventMachineSelector
     nil
   end
 
-  def add! io, listener
-    add io, listener
+  def await
     @handlers.await
-    nil
   end
 
   def remove ios

@@ -1,10 +1,15 @@
-describe IOActors::Reader do
+describe ConcurrentIO::Reader do
 
   let(:sockets){ UNIXSocket.pair }
   let(:listener) { spy("listener") }
   let(:selector) { spy("selector") }
 
   subject{ described_class.new(selector, sockets[0], listener) }
+
+  after do
+    sockets[0].close
+    subject.read!.value
+  end
 
   it "can read bytes" do
     expect(listener).to receive(:trigger_read).with("test")
@@ -26,18 +31,16 @@ describe IOActors::Reader do
       end
     end.at_most(1_000_000).times
     
-    writer = IOActors::Writer.new(selector, sockets[1], listener)
+    writer = ConcurrentIO::Writer.new(selector, sockets[1], listener)
     writer.append bytes
 
-    while input.bytesize < 1_000_000
+    times = 0
+    while input.bytesize < 1_000_000 && times < 100
       writer.flush!
+      times += 1
     end
-  end
 
-  it "terminates on :stop" do
-    subject.ask! :stop
-    expect(subject.ask!(:terminated?)).to be_truthy
-    expect(sockets[0].closed?).to be_falsey
+    writer.clear!
   end
 end
   

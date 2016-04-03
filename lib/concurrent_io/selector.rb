@@ -1,6 +1,6 @@
 require 'set'
 
-module IOActors
+module ConcurrentIO
   class SelectorState < Concurrent::ImmutableStruct.new(:active, :inactive, :receivers)
 
     def initialize active=Set.new, inactive=Set.new, receivers={}
@@ -10,7 +10,7 @@ module IOActors
     class << self
       def agent
         state = self.new
-        Concurrent::Agent.new(state, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
+        Concurrent::Agent.new(state, error_handler: proc{ |a,e| log(Logger::ERROR, a.to_s, e.to_s) })
       end
     end
   end
@@ -24,7 +24,7 @@ module IOActors
 
       @readers = SelectorState.agent
       @writers = SelectorState.agent
-      @listeners = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
+      @listeners = Concurrent::Agent.new({}, error_handler: proc{ |a,e| log(Logger::ERROR, a.to_s, e.to_s) })
 
       run!
     end
@@ -77,12 +77,6 @@ module IOActors
       trigger_error_and_remove [io], e
     ensure
       return nil
-    end
-
-    def add! io, listener
-      add io, listener
-      await
-      nil
     end
 
     def remove ios

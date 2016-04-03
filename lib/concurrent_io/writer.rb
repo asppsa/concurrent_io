@@ -1,11 +1,11 @@
-class IOActors::Writer
+class ConcurrentIO::Writer
   include Concurrent::Concern::Logging
 
   def initialize selector, io, listener
     @selector = selector
     @io = io
     @listener = listener
-    @writes = Concurrent::Agent.new([], error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
+    @writes = Concurrent::Agent.new([], error_handler: proc{ |a,e| log(Logger::ERROR, a.to_s, e.to_s) })
   end
 
   def append bytes
@@ -22,6 +22,17 @@ class IOActors::Writer
 
   def await
     @writes.await
+  end
+
+  def clear
+    @writes.send do |writes|
+      []
+    end
+  end
+
+  def clear!
+    clear
+    await
   end
 
   ##

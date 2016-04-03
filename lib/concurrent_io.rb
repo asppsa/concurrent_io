@@ -1,6 +1,6 @@
 require 'concurrent'
 
-module IOActors
+module ConcurrentIO
   @default_selector = Concurrent::AtomicReference.new(nil)
 
   class << self
@@ -38,7 +38,7 @@ module IOActors
     end
 
     def new_ffi_libevent_selector
-      require_relative 'io_actors/selector/ffi_libevent'
+      require_relative 'concurrent_io/selector/ffi_libevent'
       FFILibeventSelector.new
     end
 
@@ -47,7 +47,7 @@ module IOActors
     end
 
     def new_nio4r_selector
-      require_relative 'io_actors/selector/nio4r'
+      require_relative 'concurrent_io/selector/nio4r'
       NIO4RSelector.new
     end
 
@@ -64,7 +64,7 @@ module IOActors
     end
 
     def new_eventmachine_selector
-      require_relative 'io_actors/selector/eventmachine'
+      require_relative 'concurrent_io/selector/eventmachine'
       EventMachineSelector.new
     end
 
@@ -90,17 +90,16 @@ module IOActors
   end
 end
 
-require "io_actors/version"
-#require "io_actors/controller"
-require "io_actors/listener"
-require "io_actors/selector/basic"
-require "io_actors/selector"
-require "io_actors/reader"
-require "io_actors/writer"
+require "concurrent_io/version"
+require "concurrent_io/listener"
+require "concurrent_io/selector/basic"
+require "concurrent_io/selector"
+require "concurrent_io/reader"
+require "concurrent_io/writer"
 
 if ENV['IOACTORS_DEBUG']
   l = Logger.new(STDOUT)
-  limit = eval("Logger::#{ENV['IOACTORS_DEBUG']}")
+  limit = eval("Logger::#{ENV['CONCURRENTIO_DEBUG']}")
   l.level = limit
 
   Concurrent.global_logger = lambda do |loglevel, progname, message = nil, &block|

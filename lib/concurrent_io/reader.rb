@@ -1,4 +1,4 @@
-class IOActors::Reader
+class ConcurrentIO::Reader
   include Concurrent::Concern::Logging
 
   def initialize selector, io, listener, buffer_size=4096

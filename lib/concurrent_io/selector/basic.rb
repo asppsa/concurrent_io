@@ -1,4 +1,4 @@
-module IOActors
+module ConcurrentIO
   module BasicSelector
     def run!
       @stopped = Concurrent::IVar.new
@@ -55,6 +55,18 @@ module IOActors
 
     def length
       @listeners.deref.length
+    end
+
+    def remove! ios
+      remove ios
+      await
+      nil
+    end
+
+    def add! io, listener
+      add io, listener
+      await
+      nil
     end
   end
 end

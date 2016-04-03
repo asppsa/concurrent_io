@@ -1,8 +1,8 @@
 # Tell libevent that we are using threads
 FFI::Libevent.use_threads!
 
-class IOActors::FFILibeventSelector
-  include IOActors::BasicSelector
+class ConcurrentIO::FFILibeventSelector
+  include ConcurrentIO::BasicSelector
   include Concurrent::Concern::Logging
 
   def initialize timeout=nil, opts=nil
@@ -17,7 +17,7 @@ class IOActors::FFILibeventSelector
     end
     @trapper.add!
 
-    @events = Concurrent::Agent.new({}, error_handler: proc{ |e| log(Logger::ERROR, self.to_s, e.to_s) })
+    @events = Concurrent::Agent.new({}, error_handler: proc{ |a,e| log(Logger::ERROR, a.to_s, e.to_s) })
 
     run!
   rescue => e
@@ -87,10 +87,8 @@ class IOActors::FFILibeventSelector
     log(Logger::ERROR, self.to_s + '#add', e.to_s)
   end
 
-  def add! io, listener
-    add io, listener
+  def await
     @events.await
-    nil
   end
 
   def remove ios

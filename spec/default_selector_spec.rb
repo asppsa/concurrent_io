@@ -1,33 +1,33 @@
-describe IOActors do
+describe ConcurrentIO do
   describe '.replace_default_selector!' do
     after do
-      IOActors.reset_default_selector!
+      ConcurrentIO.reset_default_selector!
     end
 
     it "calls the given block" do
       called = false
-      IOActors.replace_default_selector!{ called = true }
+      ConcurrentIO.replace_default_selector!{ called = true }
       expect(called).to be true
     end
 
     it "replaces the value of default_selector" do
       x = {a: 1}
-      IOActors.replace_default_selector!{ x }
-      expect(IOActors.default_selector).to be x
+      ConcurrentIO.replace_default_selector!{ x }
+      expect(ConcurrentIO.default_selector).to be x
     end
   end
 
   describe '.default_selector' do
     shared_examples :returns do
       after do
-        IOActors.reset_default_selector!
+        ConcurrentIO.reset_default_selector!
       end
 
       it "returns a selector" do
-        expect(IOActors.default_selector).to respond_to :add
-        expect(IOActors.default_selector).to respond_to :add!
-        expect(IOActors.default_selector).to respond_to :remove
-        expect(IOActors.default_selector).to respond_to :write
+        expect(ConcurrentIO.default_selector).to respond_to :add
+        expect(ConcurrentIO.default_selector).to respond_to :add!
+        expect(ConcurrentIO.default_selector).to respond_to :remove
+        expect(ConcurrentIO.default_selector).to respond_to :write
       end
     end
 
@@ -37,63 +37,63 @@ describe IOActors do
 
     context "using IO.select" do
       before do
-        IOActors.use_select!
+        ConcurrentIO.use_select!
       end
 
       after do
-        IOActors.reset_default_selector!
+        ConcurrentIO.reset_default_selector!
       end
 
       include_examples :returns
 
       it "returns a Selector" do
-        expect(IOActors.default_selector).to be_a IOActors::Selector
+        expect(ConcurrentIO.default_selector).to be_a ConcurrentIO::Selector
       end
     end
 
     context "using FFI::Libevent" do
       before do
-        IOActors.use_ffi_libevent!
+        ConcurrentIO.use_ffi_libevent!
       end
 
       after do
-        IOActors.reset_default_selector!
+        ConcurrentIO.reset_default_selector!
       end
 
       include_examples :returns
 
       it "returns a FFILibeventSelector" do
-        expect(IOActors.default_selector).to be_a IOActors::FFILibeventSelector
+        expect(ConcurrentIO.default_selector).to be_a ConcurrentIO::FFILibeventSelector
       end
     end
 
     context "using NIO4R" do
       before do
-        IOActors.use_nio4r!
+        ConcurrentIO.use_nio4r!
       end
 
       after do
-        IOActors.reset_default_selector!
+        ConcurrentIO.reset_default_selector!
       end
       include_examples :returns
 
       it "returns a NIO4RSelector" do
-        expect(IOActors.default_selector).to be_a IOActors::NIO4RSelector
+        expect(ConcurrentIO.default_selector).to be_a ConcurrentIO::NIO4RSelector
       end
     end
 
     context "using EventMachine" do
       before do
-        IOActors.use_eventmachine!
+        ConcurrentIO.use_eventmachine!
       end
 
       after do
-        IOActors.reset_default_selector!
+        ConcurrentIO.reset_default_selector!
       end
       include_examples :returns
 
       it "returns a EventMachineSelector" do
-        expect(IOActors.default_selector).to be_a IOActors::EventMachineSelector
+        expect(ConcurrentIO.default_selector).to be_a ConcurrentIO::EventMachineSelector
       end
     end
   end

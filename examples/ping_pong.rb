@@ -4,16 +4,25 @@ require 'rubygems'
 require 'bundler/setup'
 require 'ffi/libevent'
 require 'nio'
-require 'io_actors'
+require 'concurrent_io'
 
 require_relative 'ping_ponger.rb'
 require 'concurrent/timer_task'
 
-# choose a select implementation
-#IOActors.use_ffi_libevent!
-IOActors.use_nio4r!
-#IOActors.use_select!
-#IOActors.use_eventmachine!
+case ARGV[0]
+when 'ffi-libevent'
+  puts 'Using FFI-Libevent'
+  ConcurrentIO.use_ffi_libevent!
+when 'nio4r'
+  puts 'Using NIO4R'
+  ConcurrentIO.use_nio4r!
+when 'eventmachine'
+  puts 'Using EventMachine'
+  ConcurrentIO.use_eventmachine!
+else
+  puts 'Using IO::select'
+  ConcurrentIO.use_select!
+end
 
 # create socket pairs
 num = 100
@@ -137,24 +146,8 @@ IO open: #{io_open}
 IO closed: #{io_closed}
 }
 
-
-    registered_length = IOActors.default_selector.instance_exec do
-      #@registered.deref.length
-    end
-
-    readers_length = IOActors.default_selector.instance_exec do
-      #@readers.deref.length
-    end
-
-    writers_length = IOActors.default_selector.instance_exec do
-      #@writers.deref.length
-    end
-
     puts %{
-DEFAULT SELECTOR LENGTH: #{IOActors.default_selector.length}
-REGISTERED LENGTH: #{registered_length}
-READERS LENGTH: #{readers_length}
-WRITERS LENGTH: #{writers_length}
+DEFAULT SELECTOR LENGTH: #{ConcurrentIO.default_selector.length}
 }
 
   rescue => e

@@ -1,4 +1,4 @@
-module IOActors::Listener
+module ConcurrentIO::Listener
   def on_read &block
     @listener_on_read = block
   end

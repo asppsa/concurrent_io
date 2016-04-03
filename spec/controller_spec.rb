@@ -1,7 +1,7 @@
 require 'socket'
-require 'io_actors/controller'
+require 'concurrent_io/controller'
 
-describe IOActors::Controller do
+describe ConcurrentIO::Controller do
   let(:sockets){ UNIXSocket.pair }
 
   shared_examples :controller do
@@ -13,26 +13,30 @@ describe IOActors::Controller do
     end
 
     it "can read bytes" do
-      @read = false
       c = Class.new(Concurrent::Actor::Context) do
+        def initialize
+          @read = false
+        end
+
         def on_message message
           case message
-          when IOActors::ReadMessage
+          when ConcurrentIO::ReadMessage
             @read = message.bytes == 'test'
           when :read
             @read
           end
         end
       end
+
       actor = c.spawn 'test'
-      subject.ask! IOActors::InformMessage.new(actor)
+      subject.ask! ConcurrentIO::InformMessage.new(actor)
       sockets[1] << 'test'
       sleep 0.5
       expect(actor.ask! :read).to be true
     end
 
     it "can write bytes" do
-      subject << IOActors::OutputMessage.new("test1")
+      subject << ConcurrentIO::OutputMessage.new("test1")
       expect(sockets[1].recv(5)).to eq("test1")
 
       subject << "test2"
@@ -55,34 +59,34 @@ describe IOActors::Controller do
   end
 
   context "using basic selector" do
-    let(:selector) { IOActors::Selector.new }
+    let(:selector) { ConcurrentIO::Selector.new }
     include_examples :controller
   end
 
   context "using ffi-libevent selector" do
     before(:context) do
-      require 'io_actors/selector/ffi_libevent'
+      require 'concurrent_io/selector/ffi_libevent'
     end
 
-    let(:selector) { IOActors::FFILibeventSelector.new }
+    let(:selector) { ConcurrentIO::FFILibeventSelector.new }
     include_examples :controller
   end
 
   context "using nio4r selector" do
     before(:context) do
-      require 'io_actors/selector/nio4r'
+      require 'concurrent_io/selector/nio4r'
     end
 
-    let(:selector) { IOActors::NIO4RSelector.new }
+    let(:selector) { ConcurrentIO::NIO4RSelector.new }
     include_examples :controller
   end
 
   context "using eventmachine selector" do
     before(:context) do
-      require 'io_actors/selector/eventmachine'
+      require 'concurrent_io/selector/eventmachine'
     end
 
-    let(:selector) { IOActors::EventMachineSelector.new }
+    let(:selector) { ConcurrentIO::EventMachineSelector.new }
     include_examples :controller
   end
 end

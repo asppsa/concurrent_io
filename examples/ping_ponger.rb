@@ -1,7 +1,7 @@
 require 'securerandom'
 
 class PingPonger
-  include IOActors::Listener
+  include ConcurrentIO::Listener
   include Concurrent::Concern::Logging
 
   PING = 'ping' #SecureRandom.random_bytes(1000)
@@ -12,7 +12,7 @@ class PingPonger
 
     @label = "#{type}-#{generation}-#{number}"
 
-    @selector = IOActors.default_selector
+    @selector = ConcurrentIO.default_selector
     @received = Concurrent::Agent.new([], error_handler: proc{ |e| log(Logger::ERROR, @label, e.to_s) })
 
     on_read do |bytes|

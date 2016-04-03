@@ -1,6 +1,6 @@
 require 'concurrent/actor'
 
-module IOActors
+module ConcurrentIO
 
   InformMessage = Concurrent::ImmutableStruct.new(:recipient)
   OutputMessage = Concurrent::ImmutableStruct.new(:bytes)
@@ -12,7 +12,7 @@ module IOActors
   class Controller < Concurrent::Actor::Context
     def initialize io, selector=nil
       @io = io
-      @selector = selector || IOActors.default_selector
+      @selector = selector || ConcurrentIO.default_selector
       @selector.add! @io, Translator.new(self.ref)
 
       @recipient = if parent != Concurrent::Actor.root
@@ -22,10 +22,10 @@ module IOActors
 
     def on_message message
       case message
-      when IOActors::InformMessage
+      when ConcurrentIO::InformMessage
         @recipient = message.recipient
 
-      when IOActors::OutputMessage
+      when ConcurrentIO::OutputMessage
         @selector.write(@io, message.bytes)
 
       when String
@@ -37,10 +37,10 @@ module IOActors
       when :recipient
         @recipient
 
-      when IOActors::ReadMessage, IOActors::WriteMessage
+      when ConcurrentIO::ReadMessage, ConcurrentIO::WriteMessage
         redirect @recipient if @recipient
 
-      when IOActors::ErrorMessage
+      when ConcurrentIO::ErrorMessage
         closed! message
 
       end
@@ -65,7 +65,7 @@ module IOActors
     end
 
     class Translator
-      include IOActors::Listener
+      include ConcurrentIO::Listener
 
       def initialize ref
         on_read do |bytes|
