@@ -1,8 +1,8 @@
 # concurrent_io
 
-This gem provides a concurrency-friendly for working with large
+This gem provides a concurrency-friendly means of working with large
 numbers of IO objects such as files and sockets without needing to
-spawn a thread per handle.  In theory this gem should make it possible
+spawn a thread per handle.  In theory this gem makes it possible
 to scalably deal with lots of open files at once, without having to
 convert everything in one's app to async IO, as is the case with a
 plain [EventMachine][em] setup, etc.  It should be noted that this
