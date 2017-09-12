@@ -5,7 +5,7 @@ class ConcurrentIO::EventMachineSelector
   include ConcurrentIO::BasicSelector
 
   def initialize timeout=nil
-    @handlers = Concurrent::Agent.new({}, error_handler: proc{ |a,e| log(Logger::ERROR, self.to_s, e.to_s) })
+    @handlers = Concurrent::Agent.new(Hash.new, error_handler: proc{ |a,e| log(Logger::ERROR, a.to_s, e.to_s) })
     run!
   end
 
