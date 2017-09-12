@@ -1,16 +1,31 @@
 module ConcurrentIO
   module BasicSelector
-    def run!
-      @stopped = Concurrent::IVar.new
-
+    def run
+      raise "No executor" unless @executor
       Concurrent::Promise.
-        execute(&method(:run_loop)).
-        catch{ |e| log(Logger::ERROR, self.to_s + '#run!', e.to_s) }.
-        then{ run! unless @stopped.fulfilled? }
+        new(:executor => @executor, &method(:run_loop)).
+        catch do |e|
+          if RUBY_ENGINE == 'jruby' && java.lang.Exception === e
+            log(Logger::ERROR, self.to_s + '#run!', e.inspect)
+          else
+            log(Logger::ERROR, self.to_s + '#run!', e)
+          end
+        end.
+        flat_map{ run unless @stopped.fulfilled? }
+    end
+
+    def run!
+      @executor = Concurrent::SingleThreadExecutor.new
+      @stopped = Concurrent::IVar.new
+      run.execute
     end
 
     def stop!
       @stopped.try_set true
+    end
+
+    def running?
+      @stopped.pending?
     end
 
     def trigger_error_and_remove ios, e=IOError
