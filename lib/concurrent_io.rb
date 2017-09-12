@@ -97,7 +97,7 @@ require "concurrent_io/selector"
 require "concurrent_io/reader"
 require "concurrent_io/writer"
 
-if ENV['IOACTORS_DEBUG']
+if ENV['CONCURRENTIO_DEBUG']
   l = Logger.new(STDOUT)
   limit = eval("Logger::#{ENV['CONCURRENTIO_DEBUG']}")
   l.level = limit
