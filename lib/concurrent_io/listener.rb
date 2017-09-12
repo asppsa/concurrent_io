@@ -1,11 +1,17 @@
 module ConcurrentIO::Listener
+  extend Concurrent::Concern::Logging
+
   def on_read &block
     @listener_on_read = block
   end
 
   def trigger_read bytes
     if @listener_on_read
-      @listener_on_read.call bytes rescue nil
+      begin
+        @listener_on_read.call bytes
+      rescue => e
+        log(Logger::ERROR, "#{self}.trigger_read", e.to_s)
+      end
     end
     nil
   end
@@ -16,7 +22,11 @@ module ConcurrentIO::Listener
 
   def trigger_write count
     if @listener_on_write
-      @listener_on_write.call count rescue nil
+      begin
+        @listener_on_write.call count
+      rescue => e
+        log(Logger::ERROR, "#{self}.trigger_write", e.to_s)
+      end
     end
     nil
   end
@@ -27,7 +37,11 @@ module ConcurrentIO::Listener
 
   def trigger_error e
     if @listener_on_error
-      @listener_on_error.call e rescue nil
+      begin
+        @listener_on_error.call e
+      rescue => e
+        log(Logger::ERROR, "#{self}.trigger_error", e.to_s)
+      end
     end
     nil
   end
