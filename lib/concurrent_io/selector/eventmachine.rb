@@ -112,7 +112,7 @@ class ConcurrentIO::EventMachineSelector
   end
 
   def write io, bytes
-    raise "Failed to acquire handler for #{io}" unless handler = @handlers.deref[io]
+    return unless handler = @handlers.deref[io]
     handler.value.write_async bytes
     nil
   end
