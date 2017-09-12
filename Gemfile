@@ -1,8 +1,8 @@
 source 'https://rubygems.org'
 gemspec
 
-# Currently only available from github
-gem "ffi-libevent", :github => 'asppsa/ffi-libevent'
+# Uncomment this if you feel adventurous
+#gem "ffi-libevent", :github => 'asppsa/ffi-libevent'
 
 # Makes MRI snappier
 platform :mri do
