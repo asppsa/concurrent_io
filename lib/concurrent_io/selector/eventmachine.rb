@@ -153,6 +153,8 @@ class ConcurrentIO::EventMachineSelector
       include Concurrent::Concern::Logging
 
       def create_async selector, io, listener
+        raise "EM is not running" unless EventMachine.reactor_running?
+
         ivar = Concurrent::IVar.new
 
         EventMachine.next_tick do
