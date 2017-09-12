@@ -120,7 +120,7 @@ class ConcurrentIO::EventMachineSelector
   def length
     @handlers.deref.length
   end
-  
+
   class Handler < EventMachine::Connection
     include Concurrent::Concern::Logging
 
@@ -175,6 +175,7 @@ class ConcurrentIO::EventMachineSelector
             ivar.set handler
           rescue => e
             log(Logger::ERROR, self.to_s + '.create_async', e.to_s)
+            ivar.set nil
             raise e
           end
         end
