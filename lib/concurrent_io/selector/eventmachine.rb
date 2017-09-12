@@ -139,13 +139,20 @@ class ConcurrentIO::EventMachineSelector
     end
 
     def write_async data
-      EventMachine.next_tick{ send_data data }
+      EventMachine.next_tick do
+        unless @unbound
+          send_data data
+          listener.trigger_write data.bytesize
+        end
+      end
     end
 
     def remove_async
       EventMachine.next_tick do
-        @intentional_remove = true
-        close_connection
+        unless @unbound
+          @intentional_remove = true
+          close_connection
+        end
       end
     end
 
