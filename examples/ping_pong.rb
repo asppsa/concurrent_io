@@ -1,23 +1,36 @@
 #!/bin/env ruby
 
+cur, max = Process.getrlimit(Process::RLIMIT_NOFILE)
+
+if cur < max
+  puts "Rlimit is less than max: #{cur} < #{max}; increasing to max"
+  Process.setrlimit(Process::RLIMIT_NOFILE, max)
+end
+
+if max < 2000
+  puts "Rlimit is very low: #{max}"
+end
+
 require 'rubygems'
 require 'bundler/setup'
-require 'ffi/libevent'
-require 'nio'
 require 'concurrent_io'
+require 'socket'
 
 require_relative 'ping_ponger.rb'
 require 'concurrent/timer_task'
 
 case ARGV[0]
 when 'ffi-libevent'
+  require 'ffi/libevent'
   puts 'Using FFI-Libevent'
   ConcurrentIO.use_ffi_libevent!
 when 'nio4r'
+  require 'nio'
   puts 'Using NIO4R'
   ConcurrentIO.use_nio4r!
 when 'eventmachine'
   puts 'Using EventMachine'
+  require 'eventmachine'
   ConcurrentIO.use_eventmachine!
 else
   puts 'Using IO::select'
@@ -53,8 +66,16 @@ module PingPongStats
   end
 end
 
+port = 9000
+server = TCPServer.new 'localhost', port
 launch_pairs = proc do
-  socket_pairs = num.times.map{ UNIXSocket.pair }
+  puts "* LAUNCHING ROUND #{v} *"
+
+  socket_pairs = num.times.map do
+    client = TCPSocket.new('localhost', port)
+    peer = server.accept
+    [client, peer]
+  end
 
   pingers = num.times.map{ |i| PingPonger.new(:pinger, v, i, socket_pairs[i][0]) }
   pongers = num.times.map{ |i| PingPonger.new(:ponger, v, i, socket_pairs[i][1]) }
@@ -62,36 +83,30 @@ launch_pairs = proc do
   pingers.each(&:start!)
 end
 
-# Every 2 seconds kill and restart everything
-Concurrent::TimerTask.execute(execution_interval: interval, timeout_interval: interval, now: true) do
-  puts %{
+# Initial start of the pairs
+launch_pairs.call
 
-
-***********
-* KILLING *
-***********
-
-
-
-}
-
-
-  while p = pingers.shift
-    p.die!
-  end
+# Every <interval> seconds, kill and restart everything
+Concurrent::TimerTask.execute(execution_interval: interval, timeout_interval: interval) do
+  puts "* KILLING #{pingers.length} PINGERS ... *"
 
   # The pongers should die by themselves
-  #while p = pongers.shift
-  #  p << :die
-  #end
+  while pinger = pingers.shift
+    pinger.die!
+  end
 
   sleep 1
 
   v += 1
-  launch_pairs.call
+  begin
+    launch_pairs.call
+  rescue => e
+    p e
+  end
 end
 
-# # Every five seconds check on the number of objects in memory
+# Every five seconds check on the number of objects in memory
+start_time = Time.now
 loop do
   begin
     now = Time.now.to_s
@@ -99,52 +114,12 @@ loop do
     puts("=" * now.length)
     puts
 
+    seconds = Time.now - start_time
     puts %{
-PINGS: #{ PingPongStats.pings }
-PONGS: #{ PingPongStats.pongs }
+PINGS: #{ PingPongStats.pings } (#{PingPongStats.pings / seconds}/s)
+PONGS: #{ PingPongStats.pongs } (#{PingPongStats.pongs / seconds}/s)
 }
     puts
-
-    ObjectSpace.each_object(Concurrent::ThreadPoolExecutor) do |exec|
-      puts "QUEUE LENGTH: #{exec.queue_length} / #{exec.max_queue}"
-      puts "POOL SIZE: #{exec.length}"
-    end
-
-    stats = {:failed => 0,
-             :alive => 0}
-
-    ObjectSpace.each_object(Concurrent::Agent) do |a|
-      k = if a.failed?
-            :failed
-          else
-            :alive
-          end
-
-      stats[k] += 1
-    end
-
-    puts %{
-FAILED AGENTS: #{stats[:failed]}
-ALIVE AGENTS: #{stats[:alive]}
-}
-
-    io_count = 0
-    io_open = 0
-    io_closed = 0
-    ObjectSpace.each_object(IO) do |io|
-      io_count += 1
-      if io.closed?
-        io_closed += 1
-      else
-        io_open += 1
-      end
-    end
-
-    puts %{
-IO: #{io_count}
-IO open: #{io_open}
-IO closed: #{io_closed}
-}
 
     puts %{
 DEFAULT SELECTOR LENGTH: #{ConcurrentIO.default_selector.length}

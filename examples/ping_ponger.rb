@@ -13,7 +13,7 @@ class PingPonger
     @label = "#{type}-#{generation}-#{number}"
 
     @selector = ConcurrentIO.default_selector
-    @received = Concurrent::Agent.new([], error_handler: proc{ |e| log(Logger::ERROR, @label, e.to_s) })
+    @received = Concurrent::Agent.new([], error_handler: proc{ |a,e| log(Logger::ERROR, @label, e.to_s) })
 
     on_read do |bytes|
       @received.send do |received|
