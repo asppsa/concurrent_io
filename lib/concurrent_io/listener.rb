@@ -1,5 +1,8 @@
 module ConcurrentIO::Listener
-  extend Concurrent::Concern::Logging
+
+  def self.included mod
+    mod.include Concurrent::Concern::Logging
+  end
 
   def on_read &block
     @listener_on_read = block

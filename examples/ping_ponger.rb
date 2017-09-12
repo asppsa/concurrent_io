@@ -2,7 +2,6 @@ require 'securerandom'
 
 class PingPonger
   include ConcurrentIO::Listener
-  include Concurrent::Concern::Logging
 
   PING = 'ping' #SecureRandom.random_bytes(1000)
   PONG = 'PONG' #SecureRandom.random_bytes(1000)
