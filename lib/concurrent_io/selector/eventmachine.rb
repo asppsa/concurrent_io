@@ -9,26 +9,67 @@ class ConcurrentIO::EventMachineSelector
     run!
   end
 
-  def run!
-    @ivar = Concurrent::IVar.new
+  def run
+    @eventmachine_running = Concurrent::IVar.new
+    super
+  end
 
+  def run!
     super
 
     # Force us to wait until EM is running
-    @ivar.value
+    @eventmachine_running.value
+  end
+
+  def running?
+    super && @eventmachine_running.fulfilled? && EM.reactor_running?
   end
 
   def run_loop
+    log(Logger::INFO, self.to_s + '#run_loop', 'Starting ...')
     EventMachine.run do
       EventMachine.error_handler do |e|
         log(Logger::ERROR, self.to_s + '#run_loop', e.to_s)
       end
 
-      @ivar.set true
+      EventMachine.next_tick do
+        @eventmachine_running.set true
+        log(Logger::INFO, self.to_s + '#run_loop', 'Started')
+      end
     end
+
+    log(Logger::INFO, self.to_s + '#run_loop', 'Loop exited')
+  rescue => e
+    if @eventmachine_running.fulfilled?
+      log(Logger::INFO, self.to_s + '#run_loop', 'Loop errored')
+    else
+      log(Logger::INFO, self.to_s + '#run_loop', 'Loop failed to start')
+    end
+
+    # This seems to be necessary (on Java, at least) in order to be able to restart
+    EventMachine.cleanup_machine
+
+    # Get rid of the existing handlers -- we can't know if these are in a consistent state or not
+    @handlers.send do |handlers|
+      handlers.each do |io, handler|
+        io.close rescue nil
+        if value = handler.value
+          value.listener.trigger_error e
+        end
+      end
+
+      Hash.new
+    end
+    @handlers.await
+
+    # Rethrow
+    raise e
   end
 
   def stop!
+    # Make sure not to stop till we've started
+    @eventmachine_running.value
+
     @stopped.try_set do
       EventMachine.stop_event_loop
       true
@@ -55,7 +96,12 @@ class ConcurrentIO::EventMachineSelector
     @handlers.send do |handlers|
       ios.each do |io|
         if handler = handlers[io]
-          handler.value.remove_async unless handler.value.unbound
+          # This blocks until EM is done adding the handle
+          if value = handler.value
+            value.remove_async
+          else
+            io.close rescue nil
+          end
         end
       end
 
